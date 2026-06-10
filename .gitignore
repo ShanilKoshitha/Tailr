@@ -1,0 +1,8 @@
+node_modules/
+dist/
+app.db
+app.db-journal
+storage/
+logs/
+.DS_Store
+*.local

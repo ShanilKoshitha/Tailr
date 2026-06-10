@@ -1,0 +1,22 @@
+{
+  "name": "tailr",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tailr — local-first job tracker with format-preserving AI resume tailoring",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w client && npm run build -w server",
+    "start": "npm run build -w client && npm run start -w server",
+    "test": "npm run test -w server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

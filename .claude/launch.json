@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "tailr",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx", "server/src/index.ts"],
+      "port": 7777,
+      "autoPort": false
+    }
+  ]
+}
