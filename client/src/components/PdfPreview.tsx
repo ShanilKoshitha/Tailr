@@ -26,27 +26,46 @@ export default function PdfPreview({ url, bbox, overlay, onParaClick, onParaHove
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [fitWidth, setFitWidth] = useState(true);
+  const [retry, setRetry] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setError(null);
-    pdfjs.getDocument({ url: `${url}?v=${refreshKey}` }).promise
-      .then((d) => { if (!cancelled) setDoc(d); })
+    let timer: ReturnType<typeof setTimeout>;
+    pdfjs.getDocument({ url: `${url}?v=${refreshKey}-${retry}` }).promise
+      .then((d) => { if (!cancelled) { setDoc(d); setError(null); } })
       .catch((e) => {
         if (cancelled) return;
         const msg: string = e?.message ?? String(e);
-        setError(/Missing PDF|404|UnexpectedResponse/i.test(msg) || e?.status === 404 ? 'no-preview' : msg);
+        if (/Missing PDF|404|UnexpectedResponse/i.test(msg) || e?.status === 404) {
+          setError('no-preview');
+          // conversion may still be running server-side — poll for ~40s
+          if (retry < 13) timer = setTimeout(() => setRetry((r) => r + 1), 3000);
+        } else {
+          setError(msg);
+        }
       });
-    return () => { cancelled = true; };
-  }, [url, refreshKey]);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [url, refreshKey, retry]);
 
-  if (error === 'no-preview') {
+  useEffect(() => { setRetry(0); }, [url, refreshKey]);
+
+  if (error === 'no-preview' && !doc) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-slate-500">
-        <div className="text-3xl">🖨️</div>
-        <p className="font-medium">No PDF preview available</p>
-        <p className="max-w-xs text-xs">Install LibreOffice (Settings → Document conversion) to see a pixel-accurate preview. Suggestions and DOCX export still work.</p>
+        {retry < 13 ? (
+          <>
+            <Spinner className="h-5 w-5 text-brand-400" />
+            <p className="font-medium">Generating preview…</p>
+            <p className="max-w-xs text-xs">Converting your resume with LibreOffice. This appears automatically when ready.</p>
+          </>
+        ) : (
+          <>
+            <div className="text-3xl">🖨️</div>
+            <p className="font-medium">No PDF preview available</p>
+            <p className="max-w-xs text-xs">Install LibreOffice (Settings → Document conversion) to see a pixel-accurate preview. Suggestions and DOCX export still work.</p>
+          </>
+        )}
       </div>
     );
   }

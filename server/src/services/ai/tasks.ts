@@ -156,6 +156,9 @@ HARD CONSTRAINTS:
   A bullet ≈ 1 line per 110 characters. Report "lineDelta" per suggestion (insertions positive, length growth positive).
 - Each suggestion lists "itemsCovered" (JD item ids it satisfies) and includes "oldText" (the exact current text
   of the target paragraph; empty string for insertions).
+- newText must be FINAL resume copy: never embed hedges or disclaimers in it ("If accurate:", "if used",
+  "[Stripe/Adyen/etc.]" option lists). Pick the single most plausible phrasing, use [X] only for numbers,
+  and let assumptionFlag carry the uncertainty — the UI shows a verification banner for flagged items.
 - ids: s1, s2, … Aim for 6–14 high-impact suggestions.`;
   return aiCall<{ suggestions: Suggestion[] }>('tailor.suggest', prompt, tailorSuggestSchema);
 }

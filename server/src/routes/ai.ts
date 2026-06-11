@@ -21,8 +21,8 @@ export default async function aiRoutes(app: FastifyInstance) {
   });
 
   app.get('/api/settings', () => ({
-    ai_model: getSetting('ai_model', 'gpt-5-codex'),
-    ai_reasoning: getSetting('ai_reasoning', 'medium'),
+    ai_model: getSetting('ai_model', ''),
+    ai_reasoning: getSetting('ai_reasoning', ''),
     openai_api_key: getSetting('openai_api_key') ? '••••' : '',
     soffice_path: getSetting('soffice_path'),
     export_pattern: getSetting('export_pattern', '{Name}_Resume_{Company}'),

@@ -45,8 +45,8 @@ export interface AiStatus {
 }
 
 export async function aiStatus(): Promise<AiStatus> {
-  const model = getSetting('ai_model', 'gpt-5-codex');
-  const reasoningEffort = getSetting('ai_reasoning', 'medium');
+  const model = getSetting('ai_model', '');
+  const reasoningEffort = getSetting('ai_reasoning', '');
   const usingApiKey = !!getSetting('openai_api_key');
   let version: string | null = null;
   try {
@@ -113,15 +113,18 @@ function extractJson(raw: string): unknown {
 }
 
 function runCodex(prompt: string): Promise<string> {
-  const model = getSetting('ai_model', 'gpt-5-codex');
-  const effort = getSetting('ai_reasoning', 'medium');
+  // Empty model/effort settings = defer to the CLI's own defaults
+  // (~/.codex/config.toml). Forcing a model name breaks across codex
+  // releases — e.g. 0.139 rejects "gpt-5-codex" on ChatGPT-account auth.
+  const model = getSetting('ai_model', '');
+  const effort = getSetting('ai_reasoning', '');
   const apiKey = getSetting('openai_api_key');
   const args = [
     'exec', '--json', '--skip-git-repo-check',
     '--sandbox', 'read-only',
     '-C', AITMP_DIR,
-    '-m', model,
-    '-c', `model_reasoning_effort="${effort}"`,
+    ...(model ? ['-m', model] : []),
+    ...(effort ? ['-c', `model_reasoning_effort="${effort}"`] : []),
     prompt,
   ];
   return new Promise((resolve, reject) => {

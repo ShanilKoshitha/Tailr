@@ -90,15 +90,16 @@ export default function SettingsView() {
           </div>
         )}
         <div className="mt-4 grid grid-cols-2 gap-3">
-          <Field label="Model">
-            <Input defaultValue={settings.ai_model} onBlur={(e) => e.target.value !== settings.ai_model && saveField('ai_model', e.target.value)} />
+          <Field label="Model (blank = Codex CLI default)">
+            <Input defaultValue={settings.ai_model} placeholder="CLI default (~/.codex/config.toml)" onBlur={(e) => e.target.value !== settings.ai_model && saveField('ai_model', e.target.value)} />
           </Field>
-          <Field label="Reasoning effort">
+          <Field label="Reasoning effort (blank = CLI default)">
             <select
               defaultValue={settings.ai_reasoning}
               onChange={(e) => saveField('ai_reasoning', e.target.value)}
               className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-sm"
             >
+              <option value="">CLI default</option>
               <option value="low">low</option><option value="medium">medium</option><option value="high">high</option>
             </select>
           </Field>

@@ -14,6 +14,7 @@ const pExecFile = promisify(execFile);
 
 const SOFFICE_CANDIDATES = [
   'soffice',
+  '/opt/homebrew/bin/soffice',
   '/Applications/LibreOffice.app/Contents/MacOS/soffice',
   '/usr/bin/soffice',
   '/usr/local/bin/soffice',
@@ -27,11 +28,12 @@ export async function findSoffice(): Promise<string | null> {
   if (override) {
     if (await isExecutable(override)) return override;
   }
-  if (cachedSoffice !== undefined) return cachedSoffice;
+  if (cachedSoffice != null) return cachedSoffice;
   for (const c of SOFFICE_CANDIDATES) {
     if (await isExecutable(c)) { cachedSoffice = c; return c; }
   }
-  cachedSoffice = null;
+  // never cache a negative result — the user may install LibreOffice
+  // while the server is running (then it should just start working)
   return null;
 }
 
