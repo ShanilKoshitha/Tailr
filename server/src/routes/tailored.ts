@@ -5,7 +5,7 @@ import { db, getSetting } from '../db.js';
 import { newId, now } from '../ids.js';
 import {
   getTailored, tailoredDir, readEditsLog, writeEditsLog, rebuild, refreshPreview,
-  aiTailor, runScore, latestReport, fingerprint, effectiveModel, loadModel,
+  aiTailor, runScore, latestReport, fingerprint, effectiveModel, loadModel, isEditablePara,
 } from '../services/tailoring.js';
 import { rewriteOne, type Suggestion } from '../services/ai/tasks.js';
 import { applyOptimisticCoverage } from '../services/scoring.js';
@@ -98,6 +98,19 @@ export default async function tailoredRoutes(app: FastifyInstance) {
       if (!popped) return reply.code(400).send({ error: 'nothing to undo' });
       writeEditsLog(t.id, state);
       await rebuild(t.id);
+      // restore the undone suggestion card to the pending list (PRD §8.6 AC2)
+      if (popped.suggestion && !suggestions.some((x) => x.id === popped.suggestion!.id)) {
+        db.prepare('UPDATE tailored_resumes SET suggestions = ?, updated_at = ? WHERE id = ?')
+          .run(JSON.stringify([popped.suggestion, ...suggestions]), now(), t.id);
+      }
+      // roll back the optimistic score report that accept inserted
+      if (popped.suggestion?.itemsCovered?.length) {
+        db.prepare(`DELETE FROM match_reports WHERE id = (
+          SELECT id FROM match_reports WHERE tailored_id = ? ORDER BY created_at DESC LIMIT 1)`).run(t.id);
+        const prev = latestReport(t.id);
+        db.prepare('UPDATE tailored_resumes SET match_score_after = ? WHERE id = ?').run(prev?.total ?? null, t.id);
+        if (prev) broadcast('score.updated', { tailoredId: t.id, total: prev.total });
+      }
       return { ok: true, undone: popped, report: recomputeOptimistic(t.id) };
     }
 
@@ -113,12 +126,13 @@ export default async function tailoredRoutes(app: FastifyInstance) {
     }
 
     if (b.action === 'accept') {
-      let edit, suggestionId = null, oldText;
+      let edit, suggestionId = null, oldText, suggestion;
       if (b.suggestionId) {
         const s = suggestions.find((x) => x.id === b.suggestionId);
         if (!s) return reply.code(404).send({ error: 'suggestion not found' });
         suggestionId = s.id;
         oldText = s.oldText;
+        suggestion = s;
         const text = typeof b.editedText === 'string' ? b.editedText : s.newText; // ✎ manual override
         edit = { op: s.op, paraId: s.paraId, newText: text };
       } else if (b.manualEdit) {
@@ -126,7 +140,7 @@ export default async function tailoredRoutes(app: FastifyInstance) {
       } else {
         return reply.code(400).send({ error: 'suggestionId or manualEdit required' });
       }
-      state.edits.push({ suggestionId, edit, oldText, acceptedAt: now() });
+      state.edits.push({ suggestionId, edit, oldText, suggestion, acceptedAt: now() });
       writeEditsLog(t.id, state);
       try {
         await rebuild(t.id);
@@ -191,9 +205,13 @@ export default async function tailoredRoutes(app: FastifyInstance) {
     const verdict = report.verdicts.items.find((i) => i.itemId === req.body?.itemId);
     if (!verdict) return reply.code(404).send({ error: 'item not found' });
     const model = effectiveModel(ctx.t.id);
-    // pick target bullet: evidence para if partial, else the most relevant-looking bullet
-    const targetParaId = verdict.evidenceParaIds?.[0]
-      ?? model.paragraphs.find((p) => p.kind === 'bullet')?.paraId;
+    // pick target bullet: evidence para if it's editable, else the first editable bullet
+    const evidence = verdict.evidenceParaIds?.find((id) => {
+      const p = model.paragraphs.find((x) => x.paraId === id);
+      return p && isEditablePara(p);
+    });
+    const targetParaId = evidence
+      ?? model.paragraphs.find((p) => p.kind === 'bullet' && isEditablePara(p))?.paraId;
     if (!targetParaId) return reply.code(400).send({ error: 'no editable bullet found' });
     try {
       const r = await rewriteOne({ model, jd, paraId: targetParaId, targetItemIds: [verdict.itemId], userHint: verdict.suggestionHint });

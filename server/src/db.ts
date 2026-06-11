@@ -1,6 +1,25 @@
 import Database from 'better-sqlite3';
-import { DB_PATH } from './paths.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { DB_PATH, RESTORE_DIR, STORAGE } from './paths.js';
 import { newId, now } from './ids.js';
+
+// A staged backup restore (Settings → Restore) is applied here, BEFORE the db
+// opens — the live db file can't be replaced while better-sqlite3 holds it.
+if (fs.existsSync(RESTORE_DIR)) {
+  const stagedDb = path.join(RESTORE_DIR, 'app.db');
+  const stagedStorage = path.join(RESTORE_DIR, 'storage');
+  if (fs.existsSync(stagedDb)) {
+    for (const suffix of ['', '-wal', '-shm']) fs.rmSync(DB_PATH + suffix, { force: true });
+    fs.renameSync(stagedDb, DB_PATH);
+  }
+  if (fs.existsSync(stagedStorage)) {
+    fs.rmSync(STORAGE, { recursive: true, force: true });
+    fs.renameSync(stagedStorage, STORAGE);
+  }
+  fs.rmSync(RESTORE_DIR, { recursive: true, force: true });
+  console.log('Backup restore applied.');
+}
 
 export const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');

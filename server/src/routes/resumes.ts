@@ -5,6 +5,7 @@ import { db } from '../db.js';
 import { newId, now } from '../ids.js';
 import { RESUMES_DIR } from '../paths.js';
 import { parseDocx } from '../docx/parse.js';
+import { aiClassifyModel } from '../services/classify.js';
 import { convertToPdf, pdfPageCount, buildBboxMap } from '../services/convert.js';
 import { broadcast } from '../sse.js';
 
@@ -33,8 +34,11 @@ export default async function resumesRoutes(app: FastifyInstance) {
     fs.writeFileSync(docxPath, buf);
 
     let model;
+    let usedAiClassify = false;
     try {
       ({ model } = await parseDocx(buf));
+      // exotic layout → heuristics failed → AI classification fallback (PRD §6.3)
+      ({ model, usedAi: usedAiClassify } = await aiClassifyModel(model));
     } catch (e) {
       fs.rmSync(dir, { recursive: true, force: true });
       return reply.code(400).send({ error: `Could not parse this DOCX: ${(e as Error).message}` });
@@ -59,7 +63,7 @@ export default async function resumesRoutes(app: FastifyInstance) {
 
     return {
       resume: { id, name: filename.replace(/\.docx$/i, ''), page_count: null },
-      model: { paragraphs: model.paragraphs.length, entries: model.entries.length, sections: Object.keys(model.sections) },
+      model: { paragraphs: model.paragraphs.length, entries: model.entries.length, sections: Object.keys(model.sections), usedAiClassify },
     };
   });
 

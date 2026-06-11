@@ -14,6 +14,19 @@ import { convertToPdf, buildBboxMap, pdfPageCount } from './convert.js';
 import { jdAnalyze, matchScore, bulletRelevance, tailorSuggest, type JdAnalysis, type MatchVerdicts, type Suggestion } from './ai/tasks.js';
 import { computeScore, type MatchReport } from './scoring.js';
 import { broadcast } from '../sse.js';
+import type { ModelParagraph } from '../docx/types.js';
+
+/**
+ * The only paragraphs AI edits may target: bullets, and body text in
+ * summary/skills-type sections. Hyperlink-bearing paragraphs (contact line
+ * with LinkedIn/GitHub) are read-only — replace_text would strip the
+ * <w:hyperlink> wrapper (PRD Appendix A.4).
+ */
+export function isEditablePara(p: ModelParagraph): boolean {
+  if (p.hasHyperlink) return false;
+  return p.kind === 'bullet' ||
+    (p.kind === 'body' && ['header', 'summary', 'skills', 'strengths'].includes(p.section));
+}
 
 export interface EditLogEntry {
   suggestionId: string | null;   // null = manual edit
@@ -21,6 +34,7 @@ export interface EditLogEntry {
   oldText?: string;
   acceptedAt: number;
   formattingFlattened?: boolean;
+  suggestion?: Suggestion;       // full card snapshot — restored to pending on undo
 }
 
 export interface TailoredState {
@@ -209,17 +223,27 @@ export async function aiTailor(tailoredId: string, emit: (stage: string, data?: 
 
   emit('drafting');
   const dismissed: string[] = JSON.parse(ctx.t.dismissed || '[]');
-  const out = await tailorSuggest({ model, jd, verdicts: report.verdicts, pageCount, deletions, dismissedFingerprints: dismissed });
+  const allowNewBullets = getSetting('allow_new_bullets', '1') === '1';
+  const maxNewBullets = Math.max(0, parseInt(getSetting('max_new_bullets', '2'), 10) || 2);
+  const out = await tailorSuggest({
+    model, jd, verdicts: report.verdicts, pageCount, deletions,
+    dismissedFingerprints: dismissed, allowNewBullets, maxNewBullets,
+  });
 
   // merge + filter: dismissed fingerprints, invalid paraIds, protected kinds
-  const editable = new Set(
-    model.paragraphs
-      .filter((p) => p.kind === 'bullet' || (p.kind === 'body' && ['header', 'summary', 'skills', 'strengths'].includes(p.section)))
-      .map((p) => p.paraId),
-  );
+  const editable = new Set(model.paragraphs.filter(isEditablePara).map((p) => p.paraId));
   const seen = new Set<string>();
+  const insertsPerEntry = new Map<string, number>();
   const all = [...out.suggestions, ...deletions].filter((s) => {
     if (!s.paraId || !editable.has(s.paraId)) return false;
+    // hard-enforce the new-bullet guardrails regardless of what the model emitted
+    if (s.op === 'insert_paragraph_after') {
+      if (!allowNewBullets) return false;
+      const key = s.entryId ?? s.paraId;
+      const n = insertsPerEntry.get(key) ?? 0;
+      if (n >= maxNewBullets) return false;
+      insertsPerEntry.set(key, n + 1);
+    }
     const fp = fingerprint(s);
     if (dismissed.includes(fp) || seen.has(fp)) return false;
     seen.add(fp);

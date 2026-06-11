@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { aiStatus, startLogin } from '../services/ai/aiCall.js';
 import { findSoffice, findPdftotext, resetSofficeCache, convertToPdf } from '../services/convert.js';
 import { db, getSetting, setSetting } from '../db.js';
-import { AI_LOGS_DIR, STORAGE } from '../paths.js';
+import { AI_LOGS_DIR, STORAGE, RESTORE_DIR } from '../paths.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -65,6 +65,38 @@ export default async function aiRoutes(app: FastifyInstance) {
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
+  });
+
+  /**
+   * Restore: stage an uploaded backup zip; it is applied at next boot
+   * (db.ts swaps app.db + storage/ in before opening the database).
+   */
+  app.post('/api/settings/restore', async (req, reply) => {
+    const file = await (req as any).file();
+    if (!file) return reply.code(400).send({ error: 'No backup zip uploaded' });
+    const buf: Buffer = await file.toBuffer();
+    const JSZip = (await import('jszip')).default;
+    let zip;
+    try {
+      zip = await JSZip.loadAsync(buf);
+    } catch {
+      return reply.code(400).send({ error: 'Not a valid zip file' });
+    }
+    const names = Object.keys(zip.files);
+    if (!names.includes('app.db') && !names.some((n) => n.startsWith('storage/'))) {
+      return reply.code(400).send({ error: 'Zip does not look like a Tailr backup (no app.db or storage/)' });
+    }
+    fs.rmSync(RESTORE_DIR, { recursive: true, force: true });
+    fs.mkdirSync(RESTORE_DIR, { recursive: true });
+    for (const [name, entry] of Object.entries(zip.files)) {
+      if (entry.dir) continue;
+      // zip-slip guard: resolve inside RESTORE_DIR only
+      const dest = path.join(RESTORE_DIR, name);
+      if (!dest.startsWith(RESTORE_DIR + path.sep)) continue;
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(dest, await entry.async('nodebuffer'));
+    }
+    return { ok: true, requiresRestart: true };
   });
 
   /** Backup: zip storage + db (PRD §11). */

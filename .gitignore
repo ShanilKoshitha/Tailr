@@ -6,3 +6,6 @@ storage/
 logs/
 .DS_Store
 *.local
+/*.docx
+app.db-wal
+app.db-shm

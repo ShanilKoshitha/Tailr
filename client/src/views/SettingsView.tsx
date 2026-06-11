@@ -146,14 +146,38 @@ export default function SettingsView() {
           <Input defaultValue={settings.export_pattern} onBlur={(e) => e.target.value !== settings.export_pattern && saveField('export_pattern', e.target.value)} />
         </Field>
         <p className="mt-1 text-xs text-slate-400">Tokens: {'{Name} {Company} {Title}'}</p>
-        <div className="mt-3 flex gap-2">
+        <div className="mt-3 flex items-center gap-2">
           <a href="/api/settings/backup" download>
             <Button variant="ghost" onClick={(e) => { e.preventDefault(); window.location.href = '/api/settings/backup'; }}>⬇ Backup (zip storage + db)</Button>
           </a>
+          <RestoreButton />
           <span className="self-center text-xs text-slate-400">Data folder: <code>{settings.storage_dir}</code></span>
         </div>
       </Section>
     </div>
+  );
+}
+
+function RestoreButton() {
+  const ref = useRef<HTMLInputElement>(null);
+  const [staged, setStaged] = useState(false);
+  async function upload(file: File | undefined) {
+    if (!file) return;
+    if (!window.confirm('Restoring replaces ALL current jobs, resumes and tailored versions with the backup. Continue?')) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch('/api/settings/restore', { method: 'POST', body: fd });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) { toast(j.error ?? 'Restore failed', 'error'); return; }
+    setStaged(true);
+    toast('Backup staged — restart Tailr to apply it', 'success');
+  }
+  return (
+    <>
+      <Button variant="ghost" onClick={() => ref.current?.click()}>⬆ Restore from backup…</Button>
+      <input ref={ref} type="file" accept=".zip" hidden onChange={(e) => upload(e.target.files?.[0])} />
+      {staged && <span className="text-xs font-medium text-amber-600">Staged ✓ — restart the app to apply</span>}
+    </>
   );
 }
 

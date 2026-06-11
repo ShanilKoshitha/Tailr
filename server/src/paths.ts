@@ -13,6 +13,7 @@ export const RESUMES_DIR = path.join(STORAGE, 'resumes');
 export const TAILORED_DIR = path.join(STORAGE, 'tailored');
 export const AITMP_DIR = path.join(STORAGE, 'aitmp');
 export const AI_LOGS_DIR = path.join(DATA_DIR, 'logs', 'ai');
+export const RESTORE_DIR = path.join(DATA_DIR, 'restore-pending');
 export const CLIENT_DIST = path.join(ROOT, 'client', 'dist');
 
 export function ensureDirs() {

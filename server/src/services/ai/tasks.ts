@@ -5,7 +5,7 @@
 import { aiCall } from './aiCall.js';
 import {
   jdAnalyzeSchema, matchScoreSchema, tailorSuggestSchema,
-  rewriteOneSchema, bulletRelevanceSchema,
+  rewriteOneSchema, bulletRelevanceSchema, resumeClassifySchema,
 } from './schemas.js';
 import { modelToPromptText } from '../../docx/parse.js';
 import type { ResumeModel } from '../../docx/types.js';
@@ -45,6 +45,35 @@ const TRUTH_GUARDRAIL = `TRUTHFULNESS GUARDRAIL (hard constraint): Never fabrica
 dates, degrees, certifications, metrics, or tools the candidate has not listed. You may reframe,
 re-emphasize, reorder, and quantify with [X] placeholders only. If a new statement asserts anything
 not already present in the resume, set "assumptionFlag": true on it.`;
+
+export interface ClassifiedPara {
+  paraId: string;
+  kind: string;
+  section: string;
+  entryId?: string | null;
+}
+
+/**
+ * resume.classify — AI fallback when section heuristics fail (PRD §6.3 step 3).
+ * Receives the ordered paragraph list, returns a label per paraId.
+ */
+export function resumeClassify(paragraphs: Array<{ paraId: string; text: string; isBullet: boolean }>): Promise<{ paragraphs: ClassifiedPara[] }> {
+  const prompt = `Classify every paragraph of this resume. The list is in document order.
+
+For each paraId return:
+- "kind": name | headerContact | heading | entryCompany | entryHeader | bullet | body | empty
+  (entryHeader = a line carrying a role title and/or date range inside the experience section;
+   entryCompany = the company/location line of an experience entry; bullet = an achievement line)
+- "section": header | summary | strengths | skills | experience | education | projects | certifications | other
+- "entryId": for bullets/entryHeader/entryCompany inside experience, group them as exp_1, exp_2, …
+  in document order (most recent role = exp_1). Null elsewhere.
+
+Include EVERY paraId exactly once. A paragraph flagged isBullet=true must keep kind "bullet".
+
+PARAGRAPHS:
+${paragraphs.map((p) => `[${p.paraId}]${p.isBullet ? ' (isBullet)' : ''} ${p.text || '(empty)'}`).join('\n').slice(0, 24000)}`;
+  return aiCall('resume.classify', prompt, resumeClassifySchema);
+}
 
 export function jdAnalyze(jdText: string, title: string, company: string): Promise<JdAnalysis> {
   const prompt = `You are an expert recruiter analyzing a job description.
@@ -114,8 +143,10 @@ export function tailorSuggest(opts: {
   pageCount: number;
   deletions: Suggestion[];
   dismissedFingerprints: string[];
+  allowNewBullets?: boolean;
+  maxNewBullets?: number;
 }): Promise<{ suggestions: Suggestion[] }> {
-  const { model, jd, verdicts, pageCount, deletions } = opts;
+  const { model, jd, verdicts, pageCount, deletions, allowNewBullets = true, maxNewBullets = 2 } = opts;
   const gaps = verdicts.items.filter((i) => i.verdict !== 'covered');
   const itemText = (id: string) =>
     [...jd.qualifications, ...jd.responsibilities, ...jd.keywords].find((i) => i.id === id)?.text ?? id;
@@ -144,8 +175,10 @@ ALREADY-PLANNED DELETIONS (do not touch these paraIds): ${deletions.map((d) => d
 
 HARD CONSTRAINTS:
 - ops allowed: replace_text (rewrite ONE existing bullet, ≤1 rewrite per bullet, keep its core factual claim),
-  insert_paragraph_after (new bullet AFTER an existing bullet paraId, max 2 per entryId, assumptionFlag
-  required if it asserts anything new; use [X] placeholders for unverifiable numbers),
+  ${allowNewBullets
+    ? `insert_paragraph_after (new bullet AFTER an existing bullet paraId, max ${maxNewBullets} per entryId, assumptionFlag
+  required if it asserts anything new; use [X] placeholders for unverifiable numbers),`
+    : `(insert_paragraph_after is DISABLED — do not propose new bullets),`}
   replace_skills_line (target paraId must be one of: ${skillsParas.map((p) => p.paraId).join(', ') || 'none'} —
   keep the "Label:<TAB>values" shape of the original line),
   and a summary rewrite via replace_text targeting ${summaryPara ? summaryPara.paraId : '(no summary paragraph found — skip summary)'}

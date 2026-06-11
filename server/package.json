@@ -7,7 +7,8 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "build": "tsc --noEmit",
-    "test": "tsx src/test/roundtrip.test.ts"
+    "test": "tsx src/test/roundtrip.test.ts && tsx src/test/realresume.test.ts",
+    "test:fidelity": "tsx src/test/fidelity.test.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.0",
@@ -22,6 +23,9 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.0",
+    "@types/pngjs": "^6.0.5",
+    "pixelmatch": "^7.2.0",
+    "pngjs": "^7.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }

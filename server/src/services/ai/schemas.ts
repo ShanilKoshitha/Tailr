@@ -106,6 +106,27 @@ export const rewriteOneSchema = {
   },
 } as const;
 
+export const resumeClassifySchema = {
+  type: 'object',
+  required: ['paragraphs'],
+  additionalProperties: true,
+  properties: {
+    paragraphs: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['paraId', 'kind', 'section'],
+        properties: {
+          paraId: { type: 'string' },
+          kind: { enum: ['name', 'headerContact', 'heading', 'entryCompany', 'entryHeader', 'bullet', 'body', 'empty'] },
+          section: { enum: ['header', 'summary', 'strengths', 'skills', 'experience', 'education', 'projects', 'certifications', 'other'] },
+          entryId: { type: ['string', 'null'] },
+        },
+      },
+    },
+  },
+} as const;
+
 export const bulletRelevanceSchema = {
   type: 'object',
   required: ['bullets'],
