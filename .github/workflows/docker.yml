@@ -1,0 +1,91 @@
+name: Docker
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Build a local amd64 image first and prove it actually works
+      - name: Build (test image)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: tailr:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test — boot, convert a DOCX with LibreOffice, check toolchain
+        run: |
+          set -euo pipefail
+          docker run -d --name tailr-test -p 7777:7777 tailr:test
+
+          echo "— waiting for the API…"
+          timeout 60 bash -c 'until curl -fs localhost:7777/api/boards > /dev/null; do sleep 1; done'
+
+          echo "— LibreOffice conversion inside the container…"
+          curl -fs -X POST localhost:7777/api/settings/test-conversion | tee /dev/stderr | grep -q '"ok":true'
+
+          echo "— toolchain detection…"
+          STATUS=$(curl -fs localhost:7777/api/ai/status)
+          echo "$STATUS"
+          echo "$STATUS" | grep -q '"installed":true'    # codex CLI baked in
+          echo "$STATUS" | grep -q '"soffice":true'
+          echo "$STATUS" | grep -q '"pdftotext":true'
+
+          echo "— end to end: upload a resume, expect a PDF preview…"
+          ID=$(curl -fs -F "file=@server/test-fixtures/table-resume.docx" \
+                 localhost:7777/api/resumes | tee /dev/stderr | jq -r .resume.id)
+          timeout 90 bash -c "until [ \"\$(curl -so /dev/null -w '%{http_code}' localhost:7777/api/resumes/$ID/preview.pdf)\" = 200 ]; do sleep 2; done"
+          echo "preview.pdf served — LibreOffice + storage volume both work"
+
+      - name: Container logs (on failure)
+        if: failure()
+        run: docker logs tailr-test || true
+
+      # Publish only after the smoke test passes, and never for PRs
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        if: github.event_name == 'push'
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=sha
+
+      - name: Build and push (multi-arch)
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

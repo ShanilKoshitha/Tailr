@@ -33,7 +33,32 @@ of the exact lines you approve.
   true" banner and `[X]` placeholders for numbers you must fill in.
 - **Export** — PDF or DOCX, named like `{Name}_Resume_{Company}.pdf`, logged as an activity.
 
-## Quick start
+## Quick start (Docker — recommended)
+
+Everything baked in: Node, LibreOffice, poppler, resume-friendly fonts, and the Codex CLI.
+
+```bash
+docker run -d --name tailr \
+  -p 7777:7777 -p 1455:1455 \
+  -v tailr-data:/data \
+  --restart unless-stopped \
+  ghcr.io/shanilkoshitha/tailr:latest
+```
+
+Or clone the repo and `docker compose up -d`. Open **http://localhost:7777**, then connect
+the AI (one of):
+
+- **ChatGPT plan:** `docker exec -it tailr codex login` — open the printed URL in your
+  browser (the `1455` port mapping carries the OAuth callback; if your codex version binds
+  the callback to loopback only, use the device-code login or the API key instead).
+- **API key:** add `-e OPENAI_API_KEY=sk-...` to the run command (or uncomment it in
+  `docker-compose.yml`).
+
+All your data (database, resumes, tailored versions, codex credentials) lives in the
+`tailr-data` volume — back that up and you've backed up everything. Heads-up: the image is
+~1 GB because LibreOffice is inside; that's the point.
+
+## Quick start (from source)
 
 ```bash
 git clone <this repo> Tailr && cd Tailr
@@ -125,7 +150,9 @@ Then in the browser at **http://localhost:7777**:
 | Variable | Default | Purpose |
 |---|---|---|
 | `PORT` | `7777` | Port the server listens on |
+| `HOST` | `127.0.0.1` | Bind address (the Docker image sets `0.0.0.0`) |
 | `TAILR_DATA_DIR` | repo root | Where `app.db`, `storage/`, and `logs/` are written |
+| `OPENAI_API_KEY` | — | API-key fallback for the AI layer (instead of ChatGPT OAuth) |
 
 ## For AI agents & contributors
 

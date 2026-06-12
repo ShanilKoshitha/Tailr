@@ -53,7 +53,7 @@ export interface AiStatus {
 export async function aiStatus(): Promise<AiStatus> {
   const model = getSetting('ai_model', '');
   const reasoningEffort = getSetting('ai_reasoning', '');
-  const usingApiKey = !!getSetting('openai_api_key');
+  const usingApiKey = !!(getSetting('openai_api_key') || process.env.OPENAI_API_KEY);
   let version: string;
   try {
     const r = await execCli('codex', ['--version'], { timeout: 15000 });
@@ -152,7 +152,8 @@ function runCodex(prompt: string): Promise<string> {
   // releases — e.g. 0.139 rejects "gpt-5-codex" on ChatGPT-account auth.
   const model = getSetting('ai_model', '');
   const effort = getSetting('ai_reasoning', '');
-  const apiKey = getSetting('openai_api_key');
+  // Settings value wins; OPENAI_API_KEY env is the container-friendly fallback
+  const apiKey = getSetting('openai_api_key') || process.env.OPENAI_API_KEY || '';
   // The prompt travels over STDIN (`codex exec -`), never on the command
   // line — required for the Windows shell path (see exec.ts) and immune to
   // ARG_MAX limits on long resumes/JDs.

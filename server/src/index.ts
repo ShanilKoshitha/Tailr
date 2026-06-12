@@ -13,6 +13,9 @@ import tailoredRoutes from './routes/tailored.js';
 import aiRoutes from './routes/ai.js';
 
 const PORT = Number(process.env.PORT ?? 7777);
+// 127.0.0.1 for local installs; containers set HOST=0.0.0.0 so published
+// ports can reach the server (loopback inside a container is unreachable).
+const HOST = process.env.HOST ?? '127.0.0.1';
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 ensureDirs();
@@ -60,5 +63,5 @@ if (fs.existsSync(CLIENT_DIST)) {
   });
 }
 
-await app.listen({ port: PORT, host: '127.0.0.1' });
+await app.listen({ port: PORT, host: HOST });
 console.log(`\n  Tailr is running → http://localhost:${PORT}\n`);
