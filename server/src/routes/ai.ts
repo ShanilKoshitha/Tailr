@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { aiStatus, startLogin } from '../services/ai/aiCall.js';
+import { aiStatus, isAuthenticated, startLogin } from '../services/ai/aiCall.js';
 import { findSoffice, findPdftotext, resetSofficeCache, convertToPdf } from '../services/convert.js';
 import { db, getSetting, setSetting } from '../db.js';
 import { AI_LOGS_DIR, STORAGE, RESTORE_DIR } from '../paths.js';
@@ -16,10 +16,8 @@ export default async function aiRoutes(app: FastifyInstance) {
 
   app.post('/api/ai/login', async () => startLogin());
 
-  app.get('/api/ai/login/status', async () => {
-    const s = await aiStatus();
-    return { authenticated: s.authenticated };
-  });
+  // polled every few seconds during sign-in — keep it to ONE child process
+  app.get('/api/ai/login/status', async () => ({ authenticated: await isAuthenticated() }));
 
   app.get('/api/settings', () => ({
     ai_model: getSetting('ai_model', ''),

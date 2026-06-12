@@ -80,9 +80,34 @@ export async function aiStatus(): Promise<AiStatus> {
   return { installed: true, version, authenticated, model, reasoningEffort, usingApiKey };
 }
 
-/** Spawn `codex login`, capture the auth URL from stdout. Process keeps running until auth completes. */
+/** Cheap auth probe for polling — one child process, no version check. */
+export async function isAuthenticated(): Promise<boolean> {
+  if (getSetting('openai_api_key') || process.env.OPENAI_API_KEY) return true;
+  try {
+    await execCli('codex', ['login', 'status'], { timeout: 15000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export interface LoginStart {
+  authUrl: string | null;
+  /** Diagnostic when no URL could be captured (exit code / output tail). */
+  error?: string;
+}
+
+/** Pick the auth URL from codex output, preferring the real provider URL over
+ *  the local callback server it also prints. Codex embeds URLs in prose, so
+ *  trailing sentence punctuation must be stripped or the link 404s. */
+function pickAuthUrl(output: string): string | null {
+  const urls = (output.match(/https?:\/\/\S+/g) ?? []).map((u) => u.replace(/[.,;:)\]'"]+$/, ''));
+  return urls.find((u) => !/localhost|127\.0\.0\.1/.test(u)) ?? urls[0] ?? null;
+}
+
+/** Spawn `codex login`, capture the auth URL. Process keeps running until auth completes. */
 let loginProc: ReturnType<typeof spawnCli> | null = null;
-export function startLogin(): Promise<{ authUrl: string | null }> {
+export function startLogin(): Promise<LoginStart> {
   return new Promise((resolve) => {
     if (loginProc) {
       loginProc.kill();
@@ -92,28 +117,35 @@ export function startLogin(): Promise<{ authUrl: string | null }> {
     loginProc = proc;
     let buf = '';
     let resolved = false;
+    const finish = (result: LoginStart) => {
+      if (resolved) return;
+      resolved = true;
+      resolve(result);
+    };
+    const fail = (reason: string) =>
+      finish({
+        authUrl: null,
+        error: `${reason}${buf.trim() ? ` — codex said: ${buf.trim().slice(-300)}` : ''}`,
+      });
     const onData = (d: Buffer) => {
       buf += d.toString();
-      const m = buf.match(/https?:\/\/\S+/);
-      if (m && !resolved) {
-        resolved = true;
-        resolve({ authUrl: m[0] });
-      }
+      const url = pickAuthUrl(buf);
+      if (url) finish({ authUrl: url });
     };
     proc.stdout?.on('data', onData);
     proc.stderr?.on('data', onData);
-    proc.on('exit', () => {
+    proc.on('error', (e) => {
       loginProc = null;
-      if (!resolved) {
-        resolved = true;
-        resolve({ authUrl: null });
-      }
+      fail(`could not start codex (${e.message})`);
+    });
+    proc.on('exit', (code) => {
+      loginProc = null;
+      fail(`codex login exited (code ${code}) before printing an auth URL`);
     });
     setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        resolve({ authUrl: buf.match(/https?:\/\/\S+/)?.[0] ?? null });
-      }
+      const url = pickAuthUrl(buf);
+      if (url) finish({ authUrl: url });
+      else fail('codex login produced no auth URL within 20s');
     }, 20000);
   });
 }

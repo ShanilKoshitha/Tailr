@@ -21,7 +21,7 @@ export default function SettingsView() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [authUrl, setAuthUrl] = useState<string | null>(null);
   const [polling, setPolling] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval>>();
+  const pollStop = useRef<(() => void) | null>(null);
 
   const load = useCallback(async () => {
     const [s, st] = await Promise.all([
@@ -34,7 +34,7 @@ export default function SettingsView() {
   useEffect(() => {
     load().catch((e) => toast(e.message, 'error'));
   }, [load]);
-  useEffect(() => () => clearInterval(pollRef.current), []);
+  useEffect(() => () => pollStop.current?.(), []);
 
   async function saveField(key: string, value: string) {
     await api.patch('/api/settings', { [key]: value });
@@ -42,21 +42,59 @@ export default function SettingsView() {
     load();
   }
 
-  async function connect() {
-    setPolling(true);
-    try {
-      const r = await api.post<{ authUrl: string | null }>('/api/ai/login');
-      setAuthUrl(r.authUrl);
-      pollRef.current = setInterval(async () => {
+  /**
+   * Sequential auth polling: each check waits for the previous one to finish
+   * (the endpoint spawns a codex process — overlapping setInterval calls used
+   * to pile those up), and the loop gives up after 5 minutes.
+   */
+  function pollUntilAuthenticated() {
+    const POLL_MS = 3000;
+    const GIVE_UP_MS = 5 * 60 * 1000;
+    const startedAt = Date.now();
+    let stopped = false;
+    pollStop.current = () => {
+      stopped = true;
+    };
+    const tick = async () => {
+      if (stopped) return;
+      try {
         const s = await api.get<{ authenticated: boolean }>('/api/ai/login/status');
+        if (stopped) return;
         if (s.authenticated) {
-          clearInterval(pollRef.current);
           setPolling(false);
           setAuthUrl(null);
           toast('ChatGPT connected ✓', 'success');
           load();
+          return;
         }
-      }, 2000);
+      } catch {
+        /* transient — keep polling until the deadline */
+      }
+      if (Date.now() - startedAt > GIVE_UP_MS) {
+        setPolling(false);
+        toast('Sign-in not completed — click Connect ChatGPT to try again', 'error');
+        return;
+      }
+      setTimeout(tick, POLL_MS);
+    };
+    setTimeout(tick, POLL_MS);
+  }
+
+  async function connect() {
+    setPolling(true);
+    try {
+      const r = await api.post<{ authUrl: string | null; error?: string }>('/api/ai/login');
+      if (!r.authUrl) {
+        // no URL → nothing to wait for; do NOT start polling
+        setPolling(false);
+        toast(
+          r.error ?? 'codex produced no login URL — run `codex login` in a terminal, then Re-check',
+          'error',
+        );
+        return;
+      }
+      setAuthUrl(r.authUrl);
+      pollUntilAuthenticated();
     } catch (e) {
       toast((e as Error).message, 'error');
       setPolling(false);
