@@ -21,6 +21,10 @@ export function subscribe(reply: FastifyReply) {
 export function broadcast(event: string, data: unknown) {
   const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
   for (const c of clients) {
-    try { c.raw.write(payload); } catch { clients.delete(c); }
+    try {
+      c.raw.write(payload);
+    } catch {
+      clients.delete(c);
+    }
   }
 }

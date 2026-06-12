@@ -12,12 +12,20 @@ import { openDocx, allParagraphs, paraText, serializeNode } from '../docx/xml.js
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
-function p(text: string, opts: { bullet?: boolean; bold?: boolean; underline?: boolean; boldLabel?: string } = {}) {
-  const pPr = opts.bullet ? `<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>` : '';
+function p(
+  text: string,
+  opts: { bullet?: boolean; bold?: boolean; underline?: boolean; boldLabel?: string } = {},
+) {
+  const pPr = opts.bullet
+    ? `<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>`
+    : '';
   if (opts.boldLabel) {
     return `<w:p>${pPr}<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${opts.boldLabel}</w:t></w:r><w:r><w:rPr><w:sz w:val="22"/></w:rPr><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
   }
-  const rPr = opts.bold || opts.underline ? `<w:rPr>${opts.bold ? '<w:b/>' : ''}${opts.underline ? '<w:u w:val="single"/>' : ''}</w:rPr>` : '';
+  const rPr =
+    opts.bold || opts.underline
+      ? `<w:rPr>${opts.bold ? '<w:b/>' : ''}${opts.underline ? '<w:u w:val="single"/>' : ''}</w:rPr>`
+      : '';
   return `<w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
 }
 
@@ -25,14 +33,20 @@ async function buildFixture(): Promise<Buffer> {
   const body = [
     p('Sam Example', { bold: true }),
     p('Halifax, NS • sam@example.com • LinkedIn'),
-    p('Senior engineer with 7+ years of experience building backend platforms and search systems for production SaaS.'),
+    p(
+      'Senior engineer with 7+ years of experience building backend platforms and search systems for production SaaS.',
+    ),
     p('Technical Stack:', { bold: true, underline: true }),
     p('PHP, Python, TypeScript, MySQL, Redis, OpenSearch, AWS', { boldLabel: 'Core:\t' }),
     p('EXPERIENCE', { bold: true }),
     p('Acme Corp Montreal (Remote)'),
     p('Senior Backend Developer – November 2021 – present', { bold: true }),
-    p('Led platform migrations across shared multi-brand systems with rollback planning.', { bullet: true }),
-    p('Built an OpenSearch-backed vector retrieval layer powering cross-brand search.', { bullet: true }),
+    p('Led platform migrations across shared multi-brand systems with rollback planning.', {
+      bullet: true,
+    }),
+    p('Built an OpenSearch-backed vector retrieval layer powering cross-brand search.', {
+      bullet: true,
+    }),
     p('Reduced infrastructure spend by $5,000/month via cache compression.', { bullet: true }),
     p('Maintained internal documentation portal for the analytics team.', { bullet: true }),
     p('Organized the quarterly team offsite logistics.', { bullet: true }),
@@ -45,12 +59,21 @@ async function buildFixture(): Promise<Buffer> {
   ].join('');
 
   const zip = new JSZip();
-  zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`);
-  zip.file('_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`);
-  zip.file('word/document.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="${W}"><w:body>${body}<w:sectPr/></w:body></w:document>`);
+  zip.file(
+    '[Content_Types].xml',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`,
+  );
+  zip.file(
+    '_rels/.rels',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`,
+  );
+  zip.file(
+    'word/document.xml',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="${W}"><w:body>${body}<w:sectPr/></w:body></w:document>`,
+  );
   return zip.generateAsync({ type: 'nodebuffer' });
 }
 
@@ -82,20 +105,45 @@ console.log('✓ parse: sections, entries, bullets, mixedFormatting');
 {
   const bullets = model.entries[0].bulletIds;
   const edits = [
-    { op: 'replace_text' as const, paraId: bullets[0], newText: 'Owned acquired-site platform migrations end to end, including rollback planning.' },
+    {
+      op: 'replace_text' as const,
+      paraId: bullets[0],
+      newText: 'Owned acquired-site platform migrations end to end, including rollback planning.',
+    },
     { op: 'delete_paragraph' as const, paraId: bullets[3] },
-    { op: 'insert_paragraph_after' as const, paraId: bullets[1], newText: 'Added vector ranking interfaces adopted by [X] internal teams.' },
-    { op: 'replace_skills_line' as const, paraId: skillsLine!.paraId, newText: 'Core:\tPHP, Python, TypeScript, Kubernetes, MySQL, Redis, OpenSearch, AWS' },
+    {
+      op: 'insert_paragraph_after' as const,
+      paraId: bullets[1],
+      newText: 'Added vector ranking interfaces adopted by [X] internal teams.',
+    },
+    {
+      op: 'replace_skills_line' as const,
+      paraId: skillsLine!.paraId,
+      newText: 'Core:\tPHP, Python, TypeScript, Kubernetes, MySQL, Redis, OpenSearch, AWS',
+    },
   ];
   const { buffer, applied } = await applyEdits(original, model, edits);
   const b = await openDocx(buffer);
   const texts = allParagraphs(b.dom).map(paraText);
 
-  assert.ok(texts.some((t) => t.startsWith('Owned acquired-site')), 'replace_text applied');
+  assert.ok(
+    texts.some((t) => t.startsWith('Owned acquired-site')),
+    'replace_text applied',
+  );
   assert.ok(!texts.some((t) => t.includes('documentation portal')), 'delete_paragraph applied');
-  assert.ok(texts.some((t) => t.includes('vector ranking interfaces')), 'insert_paragraph_after applied');
-  assert.ok(texts.some((t) => t.includes('Kubernetes')), 'replace_skills_line applied');
-  assert.strictEqual(allParagraphs(b.dom).length, allParagraphs((await openDocx(original)).dom).length, 'one delete + one insert → same paragraph count');
+  assert.ok(
+    texts.some((t) => t.includes('vector ranking interfaces')),
+    'insert_paragraph_after applied',
+  );
+  assert.ok(
+    texts.some((t) => t.includes('Kubernetes')),
+    'replace_skills_line applied',
+  );
+  assert.strictEqual(
+    allParagraphs(b.dom).length,
+    allParagraphs((await openDocx(original)).dom).length,
+    'one delete + one insert → same paragraph count',
+  );
 
   // AC2: untouched paragraphs byte-identical (compare serialized XML of unaffected paras)
   const aParas = allParagraphs((await openDocx(original)).dom);
@@ -111,7 +159,11 @@ console.log('✓ parse: sections, entries, bullets, mixedFormatting');
     if (touchedTexts.has(t)) continue;
     const match = bParas.find((bp) => paraText(bp) === t);
     assert.ok(match, `untouched paragraph survived: "${t.slice(0, 40)}"`);
-    assert.strictEqual(serializeNode(match!), serializeNode(ap), `untouched paragraph XML unchanged: "${t.slice(0, 40)}"`);
+    assert.strictEqual(
+      serializeNode(match!),
+      serializeNode(ap),
+      `untouched paragraph XML unchanged: "${t.slice(0, 40)}"`,
+    );
     comparedUntouched++;
   }
   assert.ok(comparedUntouched >= 14, 'compared a meaningful number of untouched paragraphs');

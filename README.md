@@ -127,15 +127,18 @@ Then in the browser at **http://localhost:7777**:
 | `PORT` | `7777` | Port the server listens on |
 | `TAILR_DATA_DIR` | repo root | Where `app.db`, `storage/`, and `logs/` are written |
 
-## For AI agents
+## For AI agents & contributors
 
-Working on this repo programmatically? This sequence is deterministic:
+Working on this repo programmatically? This sequence is deterministic (it's exactly what
+CI runs — see `.github/workflows/ci.yml`):
 
 ```bash
-npm install                          # install everything (npm workspaces: server + client)
-npm run build -w server              # type-check the server (tsc --noEmit)
-npm run build -w client              # type-check + bundle the client
+npm install                          # all three workspaces: shared, server, client
+npm run lint                         # ESLint (no-explicit-any is an error)
+npm run format:check                 # Prettier
+npm run typecheck                    # tsc --noEmit in every workspace
 npm test                             # DOCX round-trip + edit-op + real-resume parse tests
+npm run build -w client              # bundle the client
 npm run test:fidelity -w server      # pixel-fidelity harness (needs LibreOffice + poppler)
 ```
 
@@ -146,25 +149,26 @@ npm run test:fidelity -w server      # pixel-fidelity harness (needs LibreOffice
 - Never spawn `codex` or `soffice` on a command line that embeds resume/JD text — Tailr routes
   all CLI calls through `server/src/services/exec.ts` (prompts go over **stdin**, cross-platform).
 
+House rules and the full layout map live in [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Architecture
 
 ```
+shared/   @tailr/shared — domain & API types, single source of truth for both sides
 client/   React 18 + Vite + TypeScript + Tailwind 4 (+ @dnd-kit, pdf.js)
+  src/views/       route-level screens (Board, Studio, Resumes, Settings)
+  src/components/  shared UI + board/ + studio/ feature components
 server/   Node + Fastify + better-sqlite3
+  src/db/        typed row shapes + query helpers (no untyped SQL at call sites)
   src/docx/      format-preserving engine: JSZip + @xmldom/xmldom,
                  parse → model.json, 4 surgical edit ops
   src/services/  ai/ (codex exec adapter + prompts + AJV schemas),
                  scoring (deterministic), tailoring (pipeline), convert (soffice)
-  src/routes/    REST API + SSE event bus
-demos/    original Python prototypes the DOCX engine was ported from
+  src/routes/    REST API (JSON-schema validated bodies) + SSE event bus
 ```
 
 Data lives in `app.db` + `storage/` (gitignored). Every AI prompt/response is logged to
 `logs/ai/` for debugging.
-
-```bash
-npm test   # DOCX round-trip + edit-op test suite
-```
 
 ## Status
 

@@ -99,16 +99,26 @@ export function seedIfEmpty() {
   const board = db.prepare('SELECT id FROM boards LIMIT 1').get() as { id: string } | undefined;
   if (board) return;
   const boardId = newId('brd');
-  db.prepare('INSERT INTO boards (id, name, created_at) VALUES (?, ?, ?)').run(boardId, 'Job Search 2026', now());
-  const ins = db.prepare('INSERT INTO stages (id, board_id, name, position, color, is_terminal) VALUES (?, ?, ?, ?, ?, ?)');
+  db.prepare('INSERT INTO boards (id, name, created_at) VALUES (?, ?, ?)').run(
+    boardId,
+    'Job Search 2026',
+    now(),
+  );
+  const ins = db.prepare(
+    'INSERT INTO stages (id, board_id, name, position, color, is_terminal) VALUES (?, ?, ?, ?, ?, ?)',
+  );
   DEFAULT_STAGES.forEach((s, i) => ins.run(newId('stg'), boardId, s.name, i, s.color, s.is_terminal));
 }
 
 export function getSetting(key: string, fallback = ''): string {
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+    | { value: string }
+    | undefined;
   return row?.value ?? fallback;
 }
 
 export function setSetting(key: string, value: string) {
-  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+  db.prepare(
+    'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+  ).run(key, value);
 }

@@ -20,7 +20,10 @@ let running = 0;
 const waiters: Array<() => void> = [];
 
 async function acquire() {
-  if (running < MAX_PARALLEL) { running++; return; }
+  if (running < MAX_PARALLEL) {
+    running++;
+    return;
+  }
   await new Promise<void>((res) => waiters.push(res));
   running++;
 }
@@ -30,7 +33,12 @@ function release() {
 }
 
 export class AiError extends Error {
-  constructor(message: string, public logFile?: string) { super(message); }
+  constructor(
+    message: string,
+    public logFile?: string,
+  ) {
+    super(message);
+  }
 }
 
 export interface AiStatus {
@@ -46,12 +54,19 @@ export async function aiStatus(): Promise<AiStatus> {
   const model = getSetting('ai_model', '');
   const reasoningEffort = getSetting('ai_reasoning', '');
   const usingApiKey = !!getSetting('openai_api_key');
-  let version: string | null = null;
+  let version: string;
   try {
     const r = await execCli('codex', ['--version'], { timeout: 15000 });
     version = r.stdout.trim();
   } catch {
-    return { installed: false, version: null, authenticated: false, model, reasoningEffort, usingApiKey };
+    return {
+      installed: false,
+      version: null,
+      authenticated: false,
+      model,
+      reasoningEffort,
+      usingApiKey,
+    };
   }
   let authenticated = usingApiKey;
   if (!authenticated) {
@@ -69,7 +84,10 @@ export async function aiStatus(): Promise<AiStatus> {
 let loginProc: ReturnType<typeof spawnCli> | null = null;
 export function startLogin(): Promise<{ authUrl: string | null }> {
   return new Promise((resolve) => {
-    if (loginProc) { loginProc.kill(); loginProc = null; }
+    if (loginProc) {
+      loginProc.kill();
+      loginProc = null;
+    }
     const proc = spawnCli('codex', ['login'], { stdio: ['ignore', 'pipe', 'pipe'] });
     loginProc = proc;
     let buf = '';
@@ -77,15 +95,26 @@ export function startLogin(): Promise<{ authUrl: string | null }> {
     const onData = (d: Buffer) => {
       buf += d.toString();
       const m = buf.match(/https?:\/\/\S+/);
-      if (m && !resolved) { resolved = true; resolve({ authUrl: m[0] }); }
+      if (m && !resolved) {
+        resolved = true;
+        resolve({ authUrl: m[0] });
+      }
     };
     proc.stdout?.on('data', onData);
     proc.stderr?.on('data', onData);
     proc.on('exit', () => {
       loginProc = null;
-      if (!resolved) { resolved = true; resolve({ authUrl: null }); }
+      if (!resolved) {
+        resolved = true;
+        resolve({ authUrl: null });
+      }
     });
-    setTimeout(() => { if (!resolved) { resolved = true; resolve({ authUrl: buf.match(/https?:\/\/\S+/)?.[0] ?? null }); } }, 20000);
+    setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        resolve({ authUrl: buf.match(/https?:\/\/\S+/)?.[0] ?? null });
+      }
+    }, 20000);
   });
 }
 
@@ -97,10 +126,17 @@ function extractJson(raw: string): unknown {
     try {
       const ev = JSON.parse(lines[i]);
       const t = ev?.msg?.message ?? ev?.item?.text ?? ev?.message ?? ev?.text ?? ev?.last_agent_message;
-      if (typeof t === 'string' && t.trim()) { text = t; break; }
+      if (typeof t === 'string' && t.trim()) {
+        text = t;
+        break;
+      }
       // Some events ARE the payload (model emitted bare JSON as the whole line)
-      if (ev && typeof ev === 'object' && !ev.type && !ev.msg && !ev.item) { return ev; }
-    } catch { /* not a JSON line */ }
+      if (ev && typeof ev === 'object' && !ev.type && !ev.msg && !ev.item) {
+        return ev;
+      }
+    } catch {
+      /* not a JSON line */
+    }
   }
   // strip code fences, slice first { .. last }
   text = text.replace(/```(?:json)?/g, '');
@@ -121,9 +157,13 @@ function runCodex(prompt: string): Promise<string> {
   // line — required for the Windows shell path (see exec.ts) and immune to
   // ARG_MAX limits on long resumes/JDs.
   const args = [
-    'exec', '--json', '--skip-git-repo-check',
-    '--sandbox', 'read-only',
-    '-C', AITMP_DIR,
+    'exec',
+    '--json',
+    '--skip-git-repo-check',
+    '--sandbox',
+    'read-only',
+    '-C',
+    AITMP_DIR,
     ...(model ? ['-m', model] : []),
     ...(effort ? ['-c', `model_reasoning_effort="${effort}"`] : []),
     '-',
@@ -137,11 +177,16 @@ function runCodex(prompt: string): Promise<string> {
       proc.kill('SIGKILL');
       reject(new Error(`codex exec timed out after ${CALL_TIMEOUT_MS / 1000}s`));
     }, CALL_TIMEOUT_MS);
-    proc.stdin!.on('error', () => { /* EPIPE if codex exits first — surfaced via exit code */ });
+    proc.stdin!.on('error', () => {
+      /* EPIPE if codex exits first — surfaced via exit code */
+    });
     proc.stdin!.end(prompt, 'utf8');
     proc.stdout!.on('data', (d) => (out += d));
     proc.stderr!.on('data', (d) => (err += d));
-    proc.on('error', (e) => { clearTimeout(timer); reject(e); });
+    proc.on('error', (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
     proc.on('exit', (code) => {
       clearTimeout(timer);
       if (code === 0) resolve(out);
@@ -188,7 +233,10 @@ export async function aiCall<T = unknown>(taskName: string, prompt: string, sche
       log.rawAttempt2 = raw.slice(0, 200000);
       parsed = extractJson(raw);
       if (!validate(parsed)) {
-        throw new AiError(`AI output failed schema validation twice: ${ajv.errorsText(validate.errors)}`, logFile);
+        throw new AiError(
+          `AI output failed schema validation twice: ${ajv.errorsText(validate.errors)}`,
+          logFile,
+        );
       }
     }
     log.parsed = parsed;
@@ -198,6 +246,10 @@ export async function aiCall<T = unknown>(taskName: string, prompt: string, sche
     throw e instanceof AiError ? e : new AiError((e as Error).message, logFile);
   } finally {
     release();
-    try { fs.writeFileSync(logFile, JSON.stringify(log, null, 2)); } catch { /* logging is best-effort */ }
+    try {
+      fs.writeFileSync(logFile, JSON.stringify(log, null, 2));
+    } catch {
+      /* logging is best-effort */
+    }
   }
 }

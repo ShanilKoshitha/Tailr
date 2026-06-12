@@ -16,7 +16,14 @@ export default defineConfig({
       output: {
         manualChunks: {
           pdfjs: ['pdfjs-dist'],
-          vendor: ['react', 'react-dom', 'react-router-dom', '@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],
+          vendor: [
+            'react',
+            'react-dom',
+            'react-router-dom',
+            '@dnd-kit/core',
+            '@dnd-kit/sortable',
+            '@dnd-kit/utilities',
+          ],
         },
       },
     },

@@ -3,6 +3,7 @@ import { aiStatus, startLogin } from '../services/ai/aiCall.js';
 import { findSoffice, findPdftotext, resetSofficeCache, convertToPdf } from '../services/convert.js';
 import { db, getSetting, setSetting } from '../db.js';
 import { AI_LOGS_DIR, STORAGE, RESTORE_DIR } from '../paths.js';
+import { settingsBody, type SettingsBody } from './bodySchemas.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -33,13 +34,13 @@ export default async function aiRoutes(app: FastifyInstance) {
     storage_dir: STORAGE,
   }));
 
-  app.patch<{ Body: Record<string, string> }>('/api/settings', (req) => {
-    const allowed = ['ai_model', 'ai_reasoning', 'openai_api_key', 'soffice_path', 'export_pattern',
-      'allow_new_bullets', 'max_new_bullets', 'aggressive_trimming'];
-    for (const [k, v] of Object.entries((req.body ?? {}) as any)) {
-      if (allowed.includes(k) && typeof v === 'string') setSetting(k, v);
+  app.patch<{ Body: SettingsBody }>('/api/settings', { schema: { body: settingsBody } }, (req) => {
+    // the body schema strips unknown keys (AJV removeAdditional), so every
+      // entry here is a known setting
+    for (const [key, value] of Object.entries(req.body ?? {})) {
+      if (typeof value === 'string') setSetting(key, value);
     }
-    if ('soffice_path' in ((req.body ?? {}) as any)) resetSofficeCache();
+    if (req.body?.soffice_path !== undefined) resetSofficeCache();
     return { ok: true };
   });
 
@@ -50,12 +51,21 @@ export default async function aiRoutes(app: FastifyInstance) {
     // build a minimal docx in tmp and convert it
     const JSZip = (await import('jszip')).default;
     const zip = new JSZip();
-    zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`);
-    zip.file('_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`);
-    zip.file('word/document.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Tailr conversion test</w:t></w:r></w:p></w:body></w:document>`);
+    zip.file(
+      '[Content_Types].xml',
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`,
+    );
+    zip.file(
+      '_rels/.rels',
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`,
+    );
+    zip.file(
+      'word/document.xml',
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Tailr conversion test</w:t></w:r></w:p></w:body></w:document>`,
+    );
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tailr-test-'));
     const docx = path.join(tmp, 'test.docx');
     fs.writeFileSync(docx, await zip.generateAsync({ type: 'nodebuffer' }));
@@ -72,7 +82,7 @@ export default async function aiRoutes(app: FastifyInstance) {
    * (db.ts swaps app.db + storage/ in before opening the database).
    */
   app.post('/api/settings/restore', async (req, reply) => {
-    const file = await (req as any).file();
+    const file = await req.file();
     if (!file) return reply.code(400).send({ error: 'No backup zip uploaded' });
     const buf: Buffer = await file.toBuffer();
     const JSZip = (await import('jszip')).default;
@@ -84,7 +94,9 @@ export default async function aiRoutes(app: FastifyInstance) {
     }
     const names = Object.keys(zip.files);
     if (!names.includes('app.db') && !names.some((n) => n.startsWith('storage/'))) {
-      return reply.code(400).send({ error: 'Zip does not look like a Tailr backup (no app.db or storage/)' });
+      return reply
+        .code(400)
+        .send({ error: 'Zip does not look like a Tailr backup (no app.db or storage/)' });
     }
     fs.rmSync(RESTORE_DIR, { recursive: true, force: true });
     fs.mkdirSync(RESTORE_DIR, { recursive: true });
@@ -118,7 +130,10 @@ export default async function aiRoutes(app: FastifyInstance) {
       zip.file('app.db', fs.readFileSync(dbPath));
     }
     const buf = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
-    reply.header('Content-Disposition', `attachment; filename="tailr-backup-${new Date().toISOString().slice(0, 10)}.zip"`);
+    reply.header(
+      'Content-Disposition',
+      `attachment; filename="tailr-backup-${new Date().toISOString().slice(0, 10)}.zip"`,
+    );
     reply.type('application/zip');
     return buf;
   });

@@ -6,10 +6,18 @@
  */
 import { createHash } from 'node:crypto';
 import {
-  openDocx, allParagraphs, paraText, firstChildNS, childrenNS,
-  hasDescendantNS, W_NS, localName, serializeNode,
+  openDocx,
+  allParagraphs,
+  paraText,
+  firstChildNS,
+  childrenNS,
+  hasDescendantNS,
+  W_NS,
+  localName,
+  serializeNode,
+  type XmlElement,
 } from './xml.js';
-import type { ModelEntry, ModelParagraph, ParaKind, ResumeModel, Section } from './types.js';
+import type { ModelEntry, ParaKind, ResumeModel, Section } from '@tailr/shared';
 
 const DATE_RE = /\b(19|20)\d{2}\b.*(present|current|\b(19|20)\d{2}\b)/i;
 
@@ -28,36 +36,34 @@ function makeParaId(idx: number, text: string): string {
   return `p_${idx}_${h}`;
 }
 
-type El = any;
-
-function isBulletEl(p: El): boolean {
+function isBulletEl(p: XmlElement): boolean {
   const pPr = firstChildNS(p, 'pPr');
-  if (pPr && firstChildNS(pPr as El, 'numPr')) return true;
-  return /^\s*[•–—\-\*]\s+/.test(paraText(p));
+  if (pPr && firstChildNS(pPr, 'numPr')) return true;
+  return /^\s*[•–—\-*]\s+/.test(paraText(p));
 }
 
-function hasBoldOrUnderline(p: El): boolean {
+function hasBoldOrUnderline(p: XmlElement): boolean {
   const rprs = p.getElementsByTagNameNS(W_NS, 'rPr');
   for (let i = 0; i < rprs.length; i++) {
-    const rpr = rprs.item(i) as El;
-    if (firstChildNS(rpr, 'u') || firstChildNS(rpr, 'b')) return true;
+    const rpr = rprs.item(i);
+    if (rpr && (firstChildNS(rpr, 'u') || firstChildNS(rpr, 'b'))) return true;
   }
   return false;
 }
 
-function isInTable(p: El): boolean {
+function isInTable(p: XmlElement): boolean {
   for (let n = p.parentNode; n; n = n.parentNode) {
-    if (n.nodeType === 1 && localName(n) === 'tbl') return true;
+    if (n.nodeType === 1 && localName(n as XmlElement) === 'tbl') return true;
   }
   return false;
 }
 
 /** >1 distinct run formats among text-bearing runs → flattening warning on edit */
-function hasMixedFormatting(p: El): boolean {
+function hasMixedFormatting(p: XmlElement): boolean {
   const sigs = new Set<string>();
   for (const r of childrenNS(p, 'r')) {
-    if ((r as El).getElementsByTagNameNS(W_NS, 't').length === 0) continue;
-    const rpr = firstChildNS(r as El, 'rPr');
+    if (r.getElementsByTagNameNS(W_NS, 't').length === 0) continue;
+    const rpr = firstChildNS(r, 'rPr');
     sigs.add(rpr ? serializeNode(rpr) : '');
     if (sigs.size > 1) return true;
   }
@@ -83,7 +89,10 @@ export async function parseDocx(buf: Buffer): Promise<{ model: ResumeModel }> {
     let secHit: Section | null = null;
     if (text && text.length < 60) {
       for (const h of HEADINGS) {
-        if (h.rx.test(text)) { secHit = h.section; break; }
+        if (h.rx.test(text)) {
+          secHit = h.section;
+          break;
+        }
       }
     }
 
@@ -102,7 +111,13 @@ export async function parseDocx(buf: Buffer): Promise<{ model: ResumeModel }> {
       model.entries.push(entry);
     } else if (section === 'experience' && text && text.length < 80 && entry === null && sawHeading) {
       kind = 'entryCompany';
-    } else if (section === 'experience' && text && text.length < 60 && !DATE_RE.test(text) && !text.endsWith('.')) {
+    } else if (
+      section === 'experience' &&
+      text &&
+      text.length < 60 &&
+      !DATE_RE.test(text) &&
+      !text.endsWith('.')
+    ) {
       kind = 'entryCompany';
     } else if (!sawHeading && idx <= 4 && text) {
       kind = idx <= 1 ? 'name' : 'headerContact';
@@ -116,7 +131,11 @@ export async function parseDocx(buf: Buffer): Promise<{ model: ResumeModel }> {
     }
 
     model.paragraphs.push({
-      paraId, idx, text, kind, section,
+      paraId,
+      idx,
+      text,
+      kind,
+      section,
       entryId: entry && kind === 'bullet' ? entry.entryId : null,
       isBullet: bullet,
       inTable: isInTable(p),

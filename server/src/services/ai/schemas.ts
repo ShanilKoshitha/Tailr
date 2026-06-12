@@ -118,8 +118,31 @@ export const resumeClassifySchema = {
         required: ['paraId', 'kind', 'section'],
         properties: {
           paraId: { type: 'string' },
-          kind: { enum: ['name', 'headerContact', 'heading', 'entryCompany', 'entryHeader', 'bullet', 'body', 'empty'] },
-          section: { enum: ['header', 'summary', 'strengths', 'skills', 'experience', 'education', 'projects', 'certifications', 'other'] },
+          kind: {
+            enum: [
+              'name',
+              'headerContact',
+              'heading',
+              'entryCompany',
+              'entryHeader',
+              'bullet',
+              'body',
+              'empty',
+            ],
+          },
+          section: {
+            enum: [
+              'header',
+              'summary',
+              'strengths',
+              'skills',
+              'experience',
+              'education',
+              'projects',
+              'certifications',
+              'other',
+            ],
+          },
           entryId: { type: ['string', 'null'] },
         },
       },

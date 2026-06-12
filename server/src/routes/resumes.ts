@@ -8,24 +8,32 @@ import { parseDocx } from '../docx/parse.js';
 import { aiClassifyModel } from '../services/classify.js';
 import { convertToPdf, pdfPageCount, buildBboxMap } from '../services/convert.js';
 import { broadcast } from '../sse.js';
+import { getResume } from '../db/queries.js';
+import type { ResumeModel } from '@tailr/shared';
+
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+/** PRD §6.2: tailoring requires the editable DOCX — PDFs always lose layout. */
+const PDF_REJECTION_MESSAGE =
+  'Tailoring requires the editable DOCX so your formatting can be preserved. ' +
+  'Export your resume as .docx and re-upload.';
 
 export default async function resumesRoutes(app: FastifyInstance) {
   app.get('/api/resumes', () =>
-    db.prepare('SELECT id, name, is_base, page_count, created_at FROM resumes ORDER BY created_at DESC').all());
+    db
+      .prepare('SELECT id, name, is_base, page_count, created_at FROM resumes ORDER BY created_at DESC')
+      .all(),
+  );
 
   app.post('/api/resumes', async (req, reply) => {
-    const file = await (req as any).file();
+    const file = await req.file();
     if (!file) return reply.code(400).send({ error: 'No file uploaded' });
-    const filename: string = file.filename ?? 'resume.docx';
+    const filename = file.filename ?? 'resume.docx';
     if (!/\.docx$/i.test(filename)) {
-      // PRD §6.2 PDF policy: explicit explainer for non-docx uploads
-      return reply.code(400).send({
-        error: 'pdf_rejected',
-        message: 'Tailoring requires the editable DOCX so your formatting can be preserved. Export your resume as .docx and re-upload.',
-      });
+      return reply.code(400).send({ error: 'pdf_rejected', message: PDF_REJECTION_MESSAGE });
     }
-    const buf: Buffer = await file.toBuffer();
-    if (buf.length > 10 * 1024 * 1024) return reply.code(400).send({ error: 'Max file size is 10 MB' });
+    const buf = await file.toBuffer();
+    if (buf.length > MAX_UPLOAD_BYTES) return reply.code(400).send({ error: 'Max file size is 10 MB' });
 
     const id = newId('res');
     const dir = path.join(RESUMES_DIR, id);
@@ -33,12 +41,14 @@ export default async function resumesRoutes(app: FastifyInstance) {
     const docxPath = path.join(dir, 'original.docx');
     fs.writeFileSync(docxPath, buf);
 
-    let model;
-    let usedAiClassify = false;
+    let model: ResumeModel;
+    let usedAiClassify: boolean;
     try {
-      ({ model } = await parseDocx(buf));
+      const parsed = await parseDocx(buf);
       // exotic layout → heuristics failed → AI classification fallback (PRD §6.3)
-      ({ model, usedAi: usedAiClassify } = await aiClassifyModel(model));
+      const classified = await aiClassifyModel(parsed.model);
+      model = classified.model;
+      usedAiClassify = classified.usedAi;
     } catch (e) {
       fs.rmSync(dir, { recursive: true, force: true });
       return reply.code(400).send({ error: `Could not parse this DOCX: ${(e as Error).message}` });
@@ -46,45 +56,52 @@ export default async function resumesRoutes(app: FastifyInstance) {
     const modelPath = path.join(dir, 'model.json');
     fs.writeFileSync(modelPath, JSON.stringify(model, null, 1));
 
-    db.prepare('INSERT INTO resumes (id, name, file_path, model_json_path, is_base, page_count, created_at) VALUES (?, ?, ?, ?, 1, NULL, ?)')
-      .run(id, filename.replace(/\.docx$/i, ''), docxPath, modelPath, now());
+    db.prepare(
+      'INSERT INTO resumes (id, name, file_path, model_json_path, is_base, page_count, created_at) VALUES (?, ?, ?, ?, 1, NULL, ?)',
+    ).run(id, filename.replace(/\.docx$/i, ''), docxPath, modelPath, now());
 
-    // preview + page count in background; SSE notifies when ready
+    // preview + page count in the background; SSE notifies the client when ready
     void (async () => {
       const pdf = await convertToPdf(docxPath);
-      if (pdf) {
-        const pages = pdfPageCount(pdf);
-        if (pages) db.prepare('UPDATE resumes SET page_count = ? WHERE id = ?').run(pages, id);
-        const bbox = await buildBboxMap(pdf, model).catch(() => null);
-        fs.writeFileSync(path.join(dir, 'bbox.json'), JSON.stringify(bbox));
-        broadcast('preview.updated', { resumeId: id });
-      }
+      if (!pdf) return;
+      const pages = pdfPageCount(pdf);
+      if (pages) db.prepare('UPDATE resumes SET page_count = ? WHERE id = ?').run(pages, id);
+      const bbox = await buildBboxMap(pdf, model).catch(() => null);
+      fs.writeFileSync(path.join(dir, 'bbox.json'), JSON.stringify(bbox));
+      broadcast('preview.updated', { resumeId: id });
     })();
 
     return {
       resume: { id, name: filename.replace(/\.docx$/i, ''), page_count: null },
-      model: { paragraphs: model.paragraphs.length, entries: model.entries.length, sections: Object.keys(model.sections), usedAiClassify },
+      model: {
+        paragraphs: model.paragraphs.length,
+        entries: model.entries.length,
+        sections: Object.keys(model.sections),
+        usedAiClassify,
+      },
     };
   });
 
   app.get<{ Params: { id: string } }>('/api/resumes/:id/model', (req, reply) => {
-    const r = db.prepare('SELECT model_json_path FROM resumes WHERE id = ?').get(req.params.id) as any;
+    const r = getResume(req.params.id);
     if (!r) return reply.code(404).send({ error: 'not found' });
     reply.type('application/json');
     return fs.readFileSync(r.model_json_path, 'utf8');
   });
 
   app.get<{ Params: { id: string } }>('/api/resumes/:id/preview.pdf', (req, reply) => {
-    const r = db.prepare('SELECT file_path FROM resumes WHERE id = ?').get(req.params.id) as any;
+    const r = getResume(req.params.id);
     if (!r) return reply.code(404).send({ error: 'not found' });
     const pdf = r.file_path.replace(/original\.docx$/, 'original.pdf');
-    if (!fs.existsSync(pdf)) return reply.code(404).send({ error: 'preview not generated (is LibreOffice installed?)' });
+    if (!fs.existsSync(pdf)) {
+      return reply.code(404).send({ error: 'preview not generated (is LibreOffice installed?)' });
+    }
     reply.type('application/pdf');
     return fs.createReadStream(pdf);
   });
 
   app.get<{ Params: { id: string } }>('/api/resumes/:id/bbox', (req, reply) => {
-    const r = db.prepare('SELECT file_path FROM resumes WHERE id = ?').get(req.params.id) as any;
+    const r = getResume(req.params.id);
     if (!r) return reply.code(404).send({ error: 'not found' });
     const p = path.join(path.dirname(r.file_path), 'bbox.json');
     if (!fs.existsSync(p)) return { bbox: null };
@@ -92,9 +109,19 @@ export default async function resumesRoutes(app: FastifyInstance) {
   });
 
   app.delete<{ Params: { id: string } }>('/api/resumes/:id', (req, reply) => {
-    const used = (db.prepare('SELECT COUNT(*) c FROM tailored_resumes WHERE resume_id = ?').get(req.params.id) as any).c;
-    if (used > 0) return reply.code(400).send({ error: 'This resume has tailored versions; delete those jobs first.' });
-    const r = db.prepare('SELECT file_path FROM resumes WHERE id = ?').get(req.params.id) as any;
+    const used = (
+      db
+        .prepare('SELECT COUNT(*) AS c FROM tailored_resumes WHERE resume_id = ?')
+        .get(req.params.id) as {
+        c: number;
+      }
+    ).c;
+    if (used > 0) {
+      return reply
+        .code(400)
+        .send({ error: 'This resume has tailored versions; delete those jobs first.' });
+    }
+    const r = getResume(req.params.id);
     if (r) fs.rmSync(path.dirname(r.file_path), { recursive: true, force: true });
     db.prepare('DELETE FROM resumes WHERE id = ?').run(req.params.id);
     return { ok: true };

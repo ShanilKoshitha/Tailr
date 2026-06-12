@@ -13,7 +13,10 @@ const nav = [
 export default function App() {
   const [ai, setAi] = useState<AiStatus | null>(null);
   useEffect(() => {
-    api.get<AiStatus>('/api/ai/status').then(setAi).catch(() => {});
+    api
+      .get<AiStatus>('/api/ai/status')
+      .then(setAi)
+      .catch(() => {});
   }, []);
 
   const aiReady = ai?.installed && ai?.authenticated;
@@ -33,7 +36,9 @@ export default function App() {
               end={n.to === '/'}
               className={({ isActive }) =>
                 `flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
+                  isActive
+                    ? 'bg-brand-50 text-brand-700'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
                 }`
               }
             >
@@ -43,9 +48,16 @@ export default function App() {
         </nav>
         <div className="mt-auto px-5 pb-5">
           {ai && (
-            <NavLink to="/settings" className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500 hover:bg-slate-100">
+            <NavLink
+              to="/settings"
+              className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500 hover:bg-slate-100"
+            >
               <span className={`h-2 w-2 rounded-full ${aiReady ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-              {aiReady ? `AI ready · ${ai.model || 'default model'}` : ai.installed ? 'AI: not signed in' : 'AI: Codex not found'}
+              {aiReady
+                ? `AI ready · ${ai.model || 'default model'}`
+                : ai.installed
+                  ? 'AI: not signed in'
+                  : 'AI: Codex not found'}
             </NavLink>
           )}
         </div>

@@ -16,11 +16,7 @@ function winQuote(s: string): string {
   return `"${s.replace(/"/g, '""')}"`;
 }
 
-export function spawnCli(
-  cmd: string,
-  args: string[],
-  opts: SpawnOptions = {},
-): ChildProcess {
+export function spawnCli(cmd: string, args: string[], opts: SpawnOptions = {}): ChildProcess {
   if (isWin) {
     const line = [cmd, ...args].map(winQuote).join(' ');
     return spawn(line, { ...opts, shell: true });
@@ -28,7 +24,10 @@ export function spawnCli(
   return spawn(cmd, args, opts);
 }
 
-export interface ExecResult { stdout: string; stderr: string }
+export interface ExecResult {
+  stdout: string;
+  stderr: string;
+}
 
 /** Promise wrapper over spawnCli; rejects on non-zero exit or spawn error. */
 export function execCli(
@@ -41,11 +40,17 @@ export function execCli(
     let stdout = '';
     let stderr = '';
     const timer = opts.timeout
-      ? setTimeout(() => { proc.kill('SIGKILL'); reject(new Error(`${cmd} timed out after ${opts.timeout}ms`)); }, opts.timeout)
+      ? setTimeout(() => {
+          proc.kill('SIGKILL');
+          reject(new Error(`${cmd} timed out after ${opts.timeout}ms`));
+        }, opts.timeout)
       : null;
     proc.stdout?.on('data', (d) => (stdout += d));
     proc.stderr?.on('data', (d) => (stderr += d));
-    proc.on('error', (e) => { if (timer) clearTimeout(timer); reject(e); });
+    proc.on('error', (e) => {
+      if (timer) clearTimeout(timer);
+      reject(e);
+    });
     proc.on('exit', (code) => {
       if (timer) clearTimeout(timer);
       if (code === 0) resolve({ stdout, stderr });

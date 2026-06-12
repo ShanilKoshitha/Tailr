@@ -9,12 +9,20 @@ import { db, getSetting } from '../db.js';
 import { newId, now } from '../ids.js';
 import { TAILORED_DIR } from '../paths.js';
 import { applyEdits } from '../docx/edits.js';
-import type { Edit, ResumeModel } from '../docx/types.js';
-import { convertToPdf, buildBboxMap, pdfPageCount } from './convert.js';
-import { jdAnalyze, matchScore, bulletRelevance, tailorSuggest, type JdAnalysis, type MatchVerdicts, type Suggestion } from './ai/tasks.js';
-import { computeScore, type MatchReport } from './scoring.js';
+import type {
+  EditLogEntry,
+  JdAnalysis,
+  MatchReport,
+  ModelParagraph,
+  ResumeModel,
+  Suggestion,
+} from '@tailr/shared';
+import { convertToPdf, buildBboxMap } from './convert.js';
+import { jdAnalyze, matchScore, bulletRelevance, tailorSuggest } from './ai/tasks.js';
+import { computeScore } from './scoring.js';
 import { broadcast } from '../sse.js';
-import type { ModelParagraph } from '../docx/types.js';
+import { getJob, getResume, getTailoredRow } from '../db/queries.js';
+import type { JobRow, ResumeRow, TailoredRow } from '../db/rows.js';
 
 /**
  * The only paragraphs AI edits may target: bullets, and body text in
@@ -24,25 +32,21 @@ import type { ModelParagraph } from '../docx/types.js';
  */
 export function isEditablePara(p: ModelParagraph): boolean {
   if (p.hasHyperlink) return false;
-  return p.kind === 'bullet' ||
-    (p.kind === 'body' && ['header', 'summary', 'skills', 'strengths'].includes(p.section));
-}
-
-export interface EditLogEntry {
-  suggestionId: string | null;   // null = manual edit
-  edit: Edit;
-  oldText?: string;
-  acceptedAt: number;
-  formattingFlattened?: boolean;
-  suggestion?: Suggestion;       // full card snapshot — restored to pending on undo
+  return (
+    p.kind === 'bullet' ||
+    (p.kind === 'body' && ['header', 'summary', 'skills', 'strengths'].includes(p.section))
+  );
 }
 
 export interface TailoredState {
-  edits: EditLogEntry[];         // accepted, in accept order (undo pops the last)
+  /** Accepted edits in accept order; undo pops the last entry. */
+  edits: EditLogEntry[];
 }
 
 export function fingerprint(s: Suggestion): string {
-  return createHash('md5').update(`${s.op}|${s.paraId}|${(s.itemsCovered ?? []).slice().sort().join(',')}`).digest('hex');
+  return createHash('md5')
+    .update(`${s.op}|${s.paraId}|${(s.itemsCovered ?? []).slice().sort().join(',')}`)
+    .digest('hex');
 }
 
 export function tailoredDir(id: string) {
@@ -63,20 +67,18 @@ export function loadModel(modelPath: string): ResumeModel {
   return JSON.parse(fs.readFileSync(modelPath, 'utf8'));
 }
 
-interface TailoredRow {
-  id: string; resume_id: string; job_id: string; file_path: string;
-  edits_json_path: string; match_score_before: number | null;
-  match_score_after: number | null; status: string; suggestions: string | null;
-  dismissed: string; created_at: number; updated_at: number;
+export interface TailoredContext {
+  t: TailoredRow;
+  resume: ResumeRow;
+  job: JobRow;
 }
-interface ResumeRow { id: string; name: string; file_path: string; model_json_path: string; page_count: number | null }
-interface JobRow { id: string; title: string; company: string; jd_text: string; jd_analysis: string | null }
 
-export function getTailored(id: string) {
-  const t = db.prepare('SELECT * FROM tailored_resumes WHERE id = ?').get(id) as TailoredRow | undefined;
+export function getTailored(id: string): TailoredContext | null {
+  const t = getTailoredRow(id);
   if (!t) return null;
-  const resume = db.prepare('SELECT * FROM resumes WHERE id = ?').get(t.resume_id) as ResumeRow;
-  const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(t.job_id) as JobRow;
+  const resume = getResume(t.resume_id);
+  const job = getJob(t.job_id);
+  if (!resume || !job) return null;
   return { t, resume, job };
 }
 
@@ -88,14 +90,22 @@ export async function rebuild(id: string): Promise<void> {
   const model = loadModel(resume.model_json_path);
   const state = readEditsLog(id);
   const original = fs.readFileSync(resume.file_path);
-  const { buffer } = await applyEdits(original, model, state.edits.map((e) => e.edit));
+  const { buffer } = await applyEdits(
+    original,
+    model,
+    state.edits.map((e) => e.edit),
+  );
   fs.writeFileSync(t.file_path, buffer);
   db.prepare('UPDATE tailored_resumes SET updated_at = ? WHERE id = ?').run(now(), id);
   // refresh preview asynchronously; UI gets an SSE when ready
   void refreshPreview(id, t.file_path, resume.model_json_path);
 }
 
-export async function refreshPreview(id: string, docxPath: string, modelPath: string): Promise<string | null> {
+export async function refreshPreview(
+  id: string,
+  docxPath: string,
+  modelPath: string,
+): Promise<string | null> {
   const pdf = await convertToPdf(docxPath);
   if (pdf) {
     const model = loadModel(modelPath);
@@ -106,19 +116,30 @@ export async function refreshPreview(id: string, docxPath: string, modelPath: st
   return pdf;
 }
 
-export async function ensureJdAnalysis(jobId: string, emit: (stage: string, data?: unknown) => void): Promise<JdAnalysis> {
+export async function ensureJdAnalysis(
+  jobId: string,
+  emit: (stage: string, data?: unknown) => void,
+): Promise<JdAnalysis> {
   const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(jobId) as JobRow;
   if (!job) throw new Error('job not found');
   if (job.jd_analysis) return JSON.parse(job.jd_analysis);
-  if (!job.jd_text?.trim()) throw new Error('This job has no job description text. Paste the JD into the job first.');
+  if (!job.jd_text?.trim())
+    throw new Error('This job has no job description text. Paste the JD into the job first.');
   emit('analyzing_jd');
   const jd = await jdAnalyze(job.jd_text, job.title, job.company);
-  db.prepare('UPDATE jobs SET jd_analysis = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(jd), now(), jobId);
+  db.prepare('UPDATE jobs SET jd_analysis = ?, updated_at = ? WHERE id = ?').run(
+    JSON.stringify(jd),
+    now(),
+    jobId,
+  );
   broadcast('job.updated', { jobId });
   return jd;
 }
 
-export async function runScore(tailoredId: string, emit: (s: string, d?: unknown) => void): Promise<MatchReport> {
+export async function runScore(
+  tailoredId: string,
+  emit: (s: string, d?: unknown) => void,
+): Promise<MatchReport> {
   const ctx = getTailored(tailoredId);
   if (!ctx) throw new Error('tailored not found');
   const jd = await ensureJdAnalysis(ctx.job.id, emit);
@@ -127,21 +148,30 @@ export async function runScore(tailoredId: string, emit: (s: string, d?: unknown
   const model = effectiveModel(tailoredId);
   const verdicts = await matchScore(model, jd);
   const report = computeScore(jd, verdicts);
-  db.prepare('INSERT INTO match_reports (id, tailored_id, report, created_at) VALUES (?, ?, ?, ?)')
-    .run(newId('rpt'), tailoredId, JSON.stringify(report), now());
+  db.prepare('INSERT INTO match_reports (id, tailored_id, report, created_at) VALUES (?, ?, ?, ?)').run(
+    newId('rpt'),
+    tailoredId,
+    JSON.stringify(report),
+    now(),
+  );
   const t = ctx.t;
   if (t.match_score_before == null) {
-    db.prepare('UPDATE tailored_resumes SET match_score_before = ?, match_score_after = ? WHERE id = ?')
-      .run(report.total, report.total, tailoredId);
+    db.prepare(
+      'UPDATE tailored_resumes SET match_score_before = ?, match_score_after = ? WHERE id = ?',
+    ).run(report.total, report.total, tailoredId);
   } else {
-    db.prepare('UPDATE tailored_resumes SET match_score_after = ? WHERE id = ?').run(report.total, tailoredId);
+    db.prepare('UPDATE tailored_resumes SET match_score_after = ? WHERE id = ?').run(
+      report.total,
+      tailoredId,
+    );
   }
   broadcast('score.updated', { tailoredId, total: report.total });
   return report;
 }
 
 export function latestReport(tailoredId: string): MatchReport | null {
-  const row = db.prepare('SELECT report FROM match_reports WHERE tailored_id = ? ORDER BY created_at DESC LIMIT 1')
+  const row = db
+    .prepare('SELECT report FROM match_reports WHERE tailored_id = ? ORDER BY created_at DESC LIMIT 1')
     .get(tailoredId) as { report: string } | undefined;
   return row ? JSON.parse(row.report) : null;
 }
@@ -181,7 +211,10 @@ export function effectiveModel(tailoredId: string): ResumeModel {
 }
 
 /** Full AI Tailor pipeline (PRD §8.4): relevance trim → suggestions, with guards. */
-export async function aiTailor(tailoredId: string, emit: (stage: string, data?: unknown) => void): Promise<Suggestion[]> {
+export async function aiTailor(
+  tailoredId: string,
+  emit: (stage: string, data?: unknown) => void,
+): Promise<Suggestion[]> {
   const ctx = getTailored(tailoredId);
   if (!ctx) throw new Error('tailored not found');
   const jd = await ensureJdAnalysis(ctx.job.id, emit);
@@ -210,9 +243,15 @@ export async function aiTailor(tailoredId: string, emit: (stage: string, data?: 
         if (!aggressive && pageCount <= 1) continue;
         const para = model.paragraphs.find((p) => p.paraId === bid);
         deletions.push({
-          id: `d${++dIdx}`, op: 'delete_paragraph', paraId: bid, entryId: entry.entryId,
-          newText: '', oldText: para?.text ?? '',
-          itemsCovered: [], rationale: r.reason ?? `Low relevance (${r.relevance}/100) to this JD`, lineDelta: -1,
+          id: `d${++dIdx}`,
+          op: 'delete_paragraph',
+          paraId: bid,
+          entryId: entry.entryId,
+          newText: '',
+          oldText: para?.text ?? '',
+          itemsCovered: [],
+          rationale: r.reason ?? `Low relevance (${r.relevance}/100) to this JD`,
+          lineDelta: -1,
         });
         if (deletions.filter((d) => d.entryId === entry.entryId).length >= 3) break;
       }
@@ -226,8 +265,14 @@ export async function aiTailor(tailoredId: string, emit: (stage: string, data?: 
   const allowNewBullets = getSetting('allow_new_bullets', '1') === '1';
   const maxNewBullets = Math.max(0, parseInt(getSetting('max_new_bullets', '2'), 10) || 2);
   const out = await tailorSuggest({
-    model, jd, verdicts: report.verdicts, pageCount, deletions,
-    dismissedFingerprints: dismissed, allowNewBullets, maxNewBullets,
+    model,
+    jd,
+    verdicts: report.verdicts,
+    pageCount,
+    deletions,
+    dismissedFingerprints: dismissed,
+    allowNewBullets,
+    maxNewBullets,
   });
 
   // merge + filter: dismissed fingerprints, invalid paraIds, protected kinds
@@ -254,7 +299,10 @@ export async function aiTailor(tailoredId: string, emit: (stage: string, data?: 
     return true;
   });
 
-  db.prepare('UPDATE tailored_resumes SET suggestions = ?, updated_at = ? WHERE id = ?')
-    .run(JSON.stringify(all), now(), tailoredId);
+  db.prepare('UPDATE tailored_resumes SET suggestions = ?, updated_at = ? WHERE id = ?').run(
+    JSON.stringify(all),
+    now(),
+    tailoredId,
+  );
   return all;
 }

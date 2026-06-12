@@ -4,17 +4,28 @@
   "private": true,
   "description": "Tailr — local-first job tracker with format-preserving AI resume tailoring",
   "workspaces": [
+    "shared",
     "server",
     "client"
   ],
   "scripts": {
     "dev": "concurrently -n server,client -c blue,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
-    "build": "npm run build -w client && npm run build -w server",
+    "build": "npm run build -w client && npm run typecheck -w server",
     "start": "npm run build -w client && npm run start -w server",
-    "test": "npm run test -w server"
+    "test": "npm run test -w server",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^9.1.0",
+    "eslint": "^10.5.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "prettier": "^3.8.4",
+    "typescript-eslint": "^8.61.0"
   },
   "engines": {
     "node": ">=20"

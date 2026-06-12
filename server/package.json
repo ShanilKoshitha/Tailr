@@ -6,11 +6,12 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
-    "build": "tsc --noEmit",
     "test": "tsx src/test/roundtrip.test.ts && tsx src/test/realresume.test.ts",
-    "test:fidelity": "tsx src/test/fidelity.test.ts"
+    "test:fidelity": "tsx src/test/fidelity.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@tailr/shared": "*",
     "@fastify/cors": "^10.0.0",
     "@fastify/multipart": "^9.0.0",
     "@fastify/static": "^8.0.0",

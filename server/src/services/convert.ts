@@ -9,7 +9,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { getSetting } from '../db.js';
-import type { ResumeModel } from '../docx/types.js';
+import type { BboxMap, ParaBox, ResumeModel } from '@tailr/shared';
 
 const pExecFile = promisify(execFile);
 
@@ -31,7 +31,10 @@ export async function findSoffice(): Promise<string | null> {
   }
   if (cachedSoffice != null) return cachedSoffice;
   for (const c of SOFFICE_CANDIDATES) {
-    if (await isExecutable(c)) { cachedSoffice = c; return c; }
+    if (await isExecutable(c)) {
+      cachedSoffice = c;
+      return c;
+    }
   }
   // never cache a negative result — the user may install LibreOffice
   // while the server is running (then it should just start working)
@@ -47,7 +50,9 @@ async function isExecutable(cmd: string): Promise<boolean> {
   }
 }
 
-export function resetSofficeCache() { cachedSoffice = undefined; }
+export function resetSofficeCache() {
+  cachedSoffice = undefined;
+}
 
 /** Convert a .docx to .pdf next to it (or into outDir). Returns pdf path or null if no soffice. */
 export async function convertToPdf(docxPath: string, outDir?: string): Promise<string | null> {
@@ -58,10 +63,19 @@ export async function convertToPdf(docxPath: string, outDir?: string): Promise<s
   // pathToFileURL handles Windows drive letters (file:///C:/...)
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'tailr-lo-'));
   try {
-    await pExecFile(soffice, [
-      '--headless', `-env:UserInstallation=${pathToFileURL(profile).href}`,
-      '--convert-to', 'pdf', '--outdir', dir, docxPath,
-    ], { timeout: 120000 });
+    await pExecFile(
+      soffice,
+      [
+        '--headless',
+        `-env:UserInstallation=${pathToFileURL(profile).href}`,
+        '--convert-to',
+        'pdf',
+        '--outdir',
+        dir,
+        docxPath,
+      ],
+      { timeout: 120000 },
+    );
     const pdf = path.join(dir, path.basename(docxPath).replace(/\.docx$/i, '.pdf'));
     return fs.existsSync(pdf) ? pdf : null;
   } finally {
@@ -74,13 +88,12 @@ export async function findPdftotext(): Promise<string | null> {
     try {
       await pExecFile(c, ['-v'], { timeout: 10000 });
       return c;
-    } catch { /* try next */ }
+    } catch {
+      /* try next */
+    }
   }
   return null;
 }
-
-export interface ParaBox { paraId: string; page: number; x: number; y: number; w: number; h: number }
-export interface BboxMap { pageSizes: Array<{ page: number; width: number; height: number }>; boxes: ParaBox[] }
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
 
@@ -94,22 +107,45 @@ export async function buildBboxMap(pdfPath: string, model: ResumeModel): Promise
   if (!bin) return null;
   let xml: string;
   try {
-    const r = await pExecFile(bin, ['-bbox', pdfPath, '-'], { timeout: 30000, maxBuffer: 32 * 1024 * 1024 });
+    const r = await pExecFile(bin, ['-bbox', pdfPath, '-'], {
+      timeout: 30000,
+      maxBuffer: 32 * 1024 * 1024,
+    });
     xml = r.stdout;
   } catch {
     return null;
   }
 
-  interface Word { page: number; xMin: number; yMin: number; xMax: number; yMax: number; text: string }
+  interface Word {
+    page: number;
+    xMin: number;
+    yMin: number;
+    xMax: number;
+    yMax: number;
+    text: string;
+  }
   const words: Word[] = [];
   const pageSizes: BboxMap['pageSizes'] = [];
   let page = 0;
   for (const line of xml.split('\n')) {
     const pm = line.match(/<page width="([\d.]+)" height="([\d.]+)"/);
-    if (pm) { page += 1; pageSizes.push({ page, width: +pm[1], height: +pm[2] }); continue; }
-    const wm = line.match(/<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">(.*?)<\/word>/);
+    if (pm) {
+      page += 1;
+      pageSizes.push({ page, width: +pm[1], height: +pm[2] });
+      continue;
+    }
+    const wm = line.match(
+      /<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">(.*?)<\/word>/,
+    );
     if (wm) {
-      words.push({ page, xMin: +wm[1], yMin: +wm[2], xMax: +wm[3], yMax: +wm[4], text: decodeEntities(wm[5]) });
+      words.push({
+        page,
+        xMin: +wm[1],
+        yMin: +wm[2],
+        xMax: +wm[3],
+        yMax: +wm[4],
+        text: decodeEntities(wm[5]),
+      });
     }
   }
   if (!words.length) return null;
@@ -137,7 +173,10 @@ export async function buildBboxMap(pdfPath: string, model: ResumeModel): Promise
     const x = Math.min(...onPage.map((w) => w.xMin));
     const y = Math.min(...onPage.map((w) => w.yMin));
     boxes.push({
-      paraId: p.paraId, page: pg, x, y,
+      paraId: p.paraId,
+      page: pg,
+      x,
+      y,
       w: Math.max(...onPage.map((w) => w.xMax)) - x,
       h: Math.max(...onPage.map((w) => w.yMax)) - y,
     });
@@ -155,7 +194,12 @@ function findSeq(stream: string[], target: string[], from: number): number {
     if (stream[i] !== target[0]) continue;
     let hits = 0;
     for (let j = 0; j < target.length && i + j < stream.length; j++) {
-      if (stream[i + j] === target[j] || stream[i + j].includes(target[j]) || target[j].includes(stream[i + j])) hits++;
+      if (
+        stream[i + j] === target[j] ||
+        stream[i + j].includes(target[j]) ||
+        target[j].includes(stream[i + j])
+      )
+        hits++;
       else if (hits < Math.ceil(j * 0.6)) continue outer;
     }
     if (hits >= need) return i;
@@ -164,7 +208,12 @@ function findSeq(stream: string[], target: string[], from: number): number {
 }
 
 function decodeEntities(s: string): string {
-  return s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+  return s
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
 }
 
 /** Page count via the converted PDF (cheap regex; good enough for budgets). */

@@ -1,7 +1,12 @@
 /** Thin fetch wrapper + SSE bus for the Tailr API. */
 
 export class ApiError extends Error {
-  constructor(message: string, public status: number) { super(message); }
+  constructor(
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+  }
 }
 
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
@@ -15,7 +20,9 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
     try {
       const j = await res.json();
       msg = j.message ?? j.error ?? msg;
-    } catch { /* not json */ }
+    } catch {
+      /* not json */
+    }
     throw new ApiError(msg, res.status);
   }
   return res.json() as Promise<T>;
@@ -39,28 +46,50 @@ export async function uploadResume(file: File) {
   return res.json();
 }
 
-/** Global SSE bus (GET /api/events). */
-type Listener = (data: any) => void;
+/** Payloads broadcast on the global SSE bus, keyed by event name. */
+export interface BusEvents {
+  'preview.updated': { tailoredId?: string; resumeId?: string };
+  'score.updated': { tailoredId: string; total: number };
+  'job.updated': { jobId: string; deleted?: boolean };
+  'ai.error': { jobId?: string; message: string };
+}
+
+type Listener = (data: never) => void;
 const listeners = new Map<string, Set<Listener>>();
 let es: EventSource | null = null;
-const KNOWN_EVENTS = ['preview.updated', 'score.updated', 'job.updated', 'ai.error'];
+const KNOWN_EVENTS: Array<keyof BusEvents> = [
+  'preview.updated',
+  'score.updated',
+  'job.updated',
+  'ai.error',
+];
 
-export function onEvent(event: string, fn: Listener): () => void {
+/** Subscribe to a server event (GET /api/events). Returns an unsubscribe fn. */
+export function onEvent<E extends keyof BusEvents>(
+  event: E,
+  fn: (data: BusEvents[E]) => void,
+): () => void {
   if (!es) {
     es = new EventSource('/api/events');
     for (const ev of KNOWN_EVENTS) {
       es.addEventListener(ev, (e) => {
-        const data = JSON.parse((e as MessageEvent).data);
+        const data = JSON.parse((e as MessageEvent).data) as never;
         listeners.get(ev)?.forEach((l) => l(data));
       });
     }
   }
-  (listeners.get(event) ?? listeners.set(event, new Set()).get(event)!).add(fn);
-  return () => listeners.get(event)?.delete(fn);
+  (listeners.get(event) ?? listeners.set(event, new Set()).get(event)!).add(fn as Listener);
+  return () => listeners.get(event)?.delete(fn as Listener);
+}
+
+export interface SsePostHandlers {
+  onStage?: (d: { stage: string }) => void;
+  onDone?: (d: { suggestions: unknown[] }) => void;
+  onError?: (msg: string) => void;
 }
 
 /** POST that streams SSE progress (ai-tailor). */
-export async function ssePost(url: string, handlers: { onStage?: (d: any) => void; onDone?: (d: any) => void; onError?: (msg: string) => void }) {
+export async function ssePost(url: string, handlers: SsePostHandlers) {
   const res = await fetch(url, { method: 'POST' });
   if (!res.ok || !res.body) {
     handlers.onError?.(`Request failed (${res.status})`);

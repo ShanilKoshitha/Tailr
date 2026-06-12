@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
-import type { JobDetail, Resume, JdAnalysis } from '../types';
+import type { JobDetail, Resume } from '../types';
 import { Button, Chip, Field, Input, Spinner, TextArea, toast } from './ui';
+import JdAccordion from './JdAccordion';
 
 const TABS = ['Details', 'Resume', 'Activities', 'Contacts'] as const;
 
@@ -10,8 +11,17 @@ export default function JobDrawer({ jobId, onClose }: { jobId: string; onClose: 
   const [job, setJob] = useState<JobDetail | null>(null);
   const [tab, setTab] = useState<(typeof TABS)[number]>('Details');
 
-  const load = useCallback(() => api.get<JobDetail>(`/api/jobs/${jobId}`).then(setJob).catch((e) => toast(e.message, 'error')), [jobId]);
-  useEffect(() => { load(); }, [load]);
+  const load = useCallback(
+    () =>
+      api
+        .get<JobDetail>(`/api/jobs/${jobId}`)
+        .then(setJob)
+        .catch((e) => toast(e.message, 'error')),
+    [jobId],
+  );
+  useEffect(() => {
+    load();
+  }, [load]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -27,7 +37,9 @@ export default function JobDrawer({ jobId, onClose }: { jobId: string; onClose: 
         onMouseDown={(e) => e.stopPropagation()}
       >
         {!job ? (
-          <div className="flex flex-1 items-center justify-center"><Spinner className="h-6 w-6 text-brand-500" /></div>
+          <div className="flex flex-1 items-center justify-center">
+            <Spinner className="h-6 w-6 text-brand-500" />
+          </div>
         ) : (
           <>
             <div className="border-b border-slate-100 px-5 pt-4">
@@ -35,11 +47,27 @@ export default function JobDrawer({ jobId, onClose }: { jobId: string; onClose: 
                 <div>
                   <h2 className="text-lg font-bold text-slate-800">{job.title || 'Untitled role'}</h2>
                   <div className="text-sm text-slate-500">
-                    {job.company}{job.location ? ` · ${job.location}` : ''}
-                    {job.url && <> · <a href={job.url} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">posting ↗</a></>}
+                    {job.company}
+                    {job.location ? ` · ${job.location}` : ''}
+                    {job.url && (
+                      <>
+                        {' '}
+                        ·{' '}
+                        <a
+                          href={job.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-brand-600 hover:underline"
+                        >
+                          posting ↗
+                        </a>
+                      </>
+                    )}
                   </div>
                 </div>
-                <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">✕</button>
+                <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
+                  ✕
+                </button>
               </div>
               <div className="mt-3 flex gap-1">
                 {TABS.map((t) => (
@@ -49,7 +77,9 @@ export default function JobDrawer({ jobId, onClose }: { jobId: string; onClose: 
                     className={`rounded-t-lg px-3 py-2 text-sm font-medium ${tab === t ? 'border-b-2 border-brand-600 text-brand-700' : 'text-slate-500 hover:text-slate-700'}`}
                   >
                     {t}
-                    {t === 'Activities' && job.activities.length > 0 && <span className="ml-1 text-xs text-slate-400">{job.activities.length}</span>}
+                    {t === 'Activities' && job.activities.length > 0 && (
+                      <span className="ml-1 text-xs text-slate-400">{job.activities.length}</span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -68,10 +98,18 @@ export default function JobDrawer({ jobId, onClose }: { jobId: string; onClose: 
 }
 
 function DetailsTab({ job, reload }: { job: JobDetail; reload: () => void }) {
-  const [form, setForm] = useState({ title: job.title, company: job.company, location: job.location, url: job.url, salary: job.salary, jdText: job.jd_text });
+  const [form, setForm] = useState({
+    title: job.title,
+    company: job.company,
+    location: job.location,
+    url: job.url,
+    salary: job.salary,
+    jdText: job.jd_text,
+  });
   const [saving, setSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
-  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
 
   async function save() {
     setSaving(true);
@@ -79,7 +117,9 @@ function DetailsTab({ job, reload }: { job: JobDetail; reload: () => void }) {
       await api.patch(`/api/jobs/${job.id}`, form);
       toast('Saved', 'success');
       reload();
-    } catch (e) { toast((e as Error).message, 'error'); }
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    }
     setSaving(false);
   }
 
@@ -89,7 +129,9 @@ function DetailsTab({ job, reload }: { job: JobDetail; reload: () => void }) {
       await api.post(`/api/jobs/${job.id}/analyze`);
       toast('JD analyzed', 'success');
       reload();
-    } catch (e) { toast((e as Error).message, 'error'); }
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    }
     setAnalyzing(false);
   }
 
@@ -98,7 +140,8 @@ function DetailsTab({ job, reload }: { job: JobDetail; reload: () => void }) {
     reload();
   }
   async function remove() {
-    if (!window.confirm('Delete this job and all its activities, contacts and tailored resumes?')) return;
+    if (!window.confirm('Delete this job and all its activities, contacts and tailored resumes?'))
+      return;
     await api.del(`/api/jobs/${job.id}`);
     toast('Job deleted');
   }
@@ -106,62 +149,50 @@ function DetailsTab({ job, reload }: { job: JobDetail; reload: () => void }) {
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Title"><Input value={form.title} onChange={set('title')} /></Field>
-        <Field label="Company"><Input value={form.company} onChange={set('company')} /></Field>
-        <Field label="Location"><Input value={form.location} onChange={set('location')} /></Field>
-        <Field label="Salary"><Input value={form.salary} onChange={set('salary')} placeholder="$140k–160k" /></Field>
+        <Field label="Title">
+          <Input value={form.title} onChange={set('title')} />
+        </Field>
+        <Field label="Company">
+          <Input value={form.company} onChange={set('company')} />
+        </Field>
+        <Field label="Location">
+          <Input value={form.location} onChange={set('location')} />
+        </Field>
+        <Field label="Salary">
+          <Input value={form.salary} onChange={set('salary')} placeholder="$140k–160k" />
+        </Field>
       </div>
-      <Field label="URL"><Input value={form.url} onChange={set('url')} /></Field>
+      <Field label="URL">
+        <Input value={form.url} onChange={set('url')} />
+      </Field>
       <Field label="Job description">
         <TextArea rows={8} value={form.jdText} onChange={set('jdText')} placeholder="Paste the JD…" />
       </Field>
       <div className="flex items-center gap-2">
-        <Button onClick={save} disabled={saving}>{saving ? <Spinner /> : 'Save'}</Button>
+        <Button onClick={save} disabled={saving}>
+          {saving ? <Spinner /> : 'Save'}
+        </Button>
         <Button variant="ghost" onClick={analyze} disabled={analyzing || !form.jdText.trim()}>
-          {analyzing ? <><Spinner /> Analyzing…</> : job.jd_analysis ? '↻ Re-analyze JD' : '✦ Analyze JD'}
+          {analyzing ? (
+            <>
+              <Spinner /> Analyzing…
+            </>
+          ) : job.jd_analysis ? (
+            '↻ Re-analyze JD'
+          ) : (
+            '✦ Analyze JD'
+          )}
         </Button>
         <div className="ml-auto flex gap-2">
-          <Button variant="subtle" onClick={archive}>{job.is_archived ? 'Unarchive' : 'Archive'}</Button>
-          <Button variant="danger" onClick={remove}>Delete</Button>
+          <Button variant="subtle" onClick={archive}>
+            {job.is_archived ? 'Unarchive' : 'Archive'}
+          </Button>
+          <Button variant="danger" onClick={remove}>
+            Delete
+          </Button>
         </div>
       </div>
       {job.jd_analysis && <JdAccordion analysis={job.jd_analysis} />}
-    </div>
-  );
-}
-
-export function JdAccordion({ analysis, verdictOf }: { analysis: JdAnalysis; verdictOf?: (id: string) => 'covered' | 'partial' | 'missing' | undefined }) {
-  const groups = [
-    { name: 'Qualifications', items: analysis.qualifications, meta: (i: any) => i.priority },
-    { name: 'Responsibilities', items: analysis.responsibilities, meta: (i: any) => i.priority },
-    { name: 'Keywords', items: analysis.keywords, meta: (i: any) => i.type },
-  ];
-  const [open, setOpen] = useState<string | null>('Qualifications');
-  const dot = (v?: string) =>
-    v === 'covered' ? 'bg-emerald-500' : v === 'partial' ? 'bg-amber-500' : v === 'missing' ? 'bg-rose-500' : 'bg-slate-300';
-  return (
-    <div className="rounded-xl border border-slate-200">
-      <div className="border-b border-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Extracted · target: <span className="text-brand-600 normal-case">{analysis.titleEssence}</span>
-      </div>
-      {groups.map((g) => (
-        <div key={g.name} className="border-b border-slate-100 last:border-0">
-          <button className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50" onClick={() => setOpen(open === g.name ? null : g.name)}>
-            <span>{g.name} <span className="text-xs text-slate-400">{g.items.length}</span></span>
-            <span className="text-slate-400">{open === g.name ? '▾' : '▸'}</span>
-          </button>
-          {open === g.name && (
-            <ul className="space-y-1 px-3 pb-2">
-              {g.items.map((i) => (
-                <li key={i.id} className="flex items-start gap-2 text-sm text-slate-600">
-                  <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${dot(verdictOf?.(i.id))}`} />
-                  <span>{i.text} <span className="text-xs text-slate-400">({g.meta(i)})</span></span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      ))}
     </div>
   );
 }
@@ -172,7 +203,12 @@ function ResumeTab({ job }: { job: JobDetail }) {
   const [picking, setPicking] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  useEffect(() => { api.get<Resume[]>('/api/resumes').then(setResumes).catch(() => setResumes([])); }, []);
+  useEffect(() => {
+    api
+      .get<Resume[]>('/api/resumes')
+      .then(setResumes)
+      .catch(() => setResumes([]));
+  }, []);
 
   async function createTailored(resumeId: string) {
     setCreating(true);
@@ -190,15 +226,26 @@ function ResumeTab({ job }: { job: JobDetail }) {
       {job.tailored.length > 0 && (
         <div className="space-y-2">
           {job.tailored.map((t) => (
-            <button key={t.id} onClick={() => navigate(`/studio/${t.id}`)} className="flex w-full items-center gap-3 rounded-xl border border-slate-200 p-3 text-left hover:border-brand-300 hover:bg-brand-50/40">
+            <button
+              key={t.id}
+              onClick={() => navigate(`/studio/${t.id}`)}
+              className="flex w-full items-center gap-3 rounded-xl border border-slate-200 p-3 text-left hover:border-brand-300 hover:bg-brand-50/40"
+            >
               <span className="text-xl">📄</span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-slate-700">{t.resume_name}</span>
-                <span className="text-xs text-slate-400">{new Date(t.created_at).toLocaleDateString()} · {t.status}</span>
+                <span className="block truncate text-sm font-medium text-slate-700">
+                  {t.resume_name}
+                </span>
+                <span className="text-xs text-slate-400">
+                  {new Date(t.created_at).toLocaleDateString()} · {t.status}
+                </span>
               </span>
               {t.match_score_before != null && (
                 <Chip tone={t.status === 'finalized' ? 'green' : 'brand'}>
-                  {t.match_score_before}{t.match_score_after != null && t.match_score_after !== t.match_score_before ? ` → ${t.match_score_after}` : ''}
+                  {t.match_score_before}
+                  {t.match_score_after != null && t.match_score_after !== t.match_score_before
+                    ? ` → ${t.match_score_after}`
+                    : ''}
                 </Chip>
               )}
             </button>
@@ -207,30 +254,55 @@ function ResumeTab({ job }: { job: JobDetail }) {
       )}
 
       {!picking ? (
-        <Button onClick={() => setPicking(true)} className="w-full">✂️ Tailor resume for this job</Button>
-      ) : resumes === null ? <Spinner /> : resumes.length === 0 ? (
+        <Button onClick={() => setPicking(true)} className="w-full">
+          ✂️ Tailor resume for this job
+        </Button>
+      ) : resumes === null ? (
+        <Spinner />
+      ) : resumes.length === 0 ? (
         <div className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
-          No base resume yet. <button className="font-semibold underline" onClick={() => navigate('/resumes')}>Upload your DOCX resume</button> first.
+          No base resume yet.{' '}
+          <button className="font-semibold underline" onClick={() => navigate('/resumes')}>
+            Upload your DOCX resume
+          </button>{' '}
+          first.
         </div>
       ) : (
         <div className="space-y-2 rounded-xl border border-slate-200 p-3">
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Choose base resume</div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Choose base resume
+          </div>
           {resumes.map((r) => (
-            <button key={r.id} disabled={creating} onClick={() => createTailored(r.id)} className="flex w-full items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm hover:border-brand-300 hover:bg-brand-50/40 disabled:opacity-50">
-              📄 {r.name} {r.page_count && <span className="text-xs text-slate-400">· {r.page_count}p</span>}
+            <button
+              key={r.id}
+              disabled={creating}
+              onClick={() => createTailored(r.id)}
+              className="flex w-full items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm hover:border-brand-300 hover:bg-brand-50/40 disabled:opacity-50"
+            >
+              📄 {r.name}{' '}
+              {r.page_count && <span className="text-xs text-slate-400">· {r.page_count}p</span>}
               {creating && <Spinner className="ml-auto h-3.5 w-3.5" />}
             </button>
           ))}
         </div>
       )}
       {!job.jd_text?.trim() && (
-        <p className="text-xs text-slate-400">Tip: paste the job description in Details first — tailoring needs it.</p>
+        <p className="text-xs text-slate-400">
+          Tip: paste the job description in Details first — tailoring needs it.
+        </p>
       )}
     </div>
   );
 }
 
-const ACT_ICONS: Record<string, string> = { applied: '📨', interview: '🎙', follow_up: '🔔', note: '📝', stage_change: '↪', export: '📤' };
+const ACT_ICONS: Record<string, string> = {
+  applied: '📨',
+  interview: '🎙',
+  follow_up: '🔔',
+  note: '📝',
+  stage_change: '↪',
+  export: '📤',
+};
 
 function ActivitiesTab({ job, reload }: { job: JobDetail; reload: () => void }) {
   const [title, setTitle] = useState('');
@@ -239,8 +311,13 @@ function ActivitiesTab({ job, reload }: { job: JobDetail; reload: () => void }) 
 
   async function add() {
     if (!title.trim()) return;
-    await api.post(`/api/jobs/${job.id}/activities`, { type, title, dueAt: due ? new Date(due).getTime() : null });
-    setTitle(''); setDue('');
+    await api.post(`/api/jobs/${job.id}/activities`, {
+      type,
+      title,
+      dueAt: due ? new Date(due).getTime() : null,
+    });
+    setTitle('');
+    setDue('');
     reload();
   }
   async function toggle(id: string, done: boolean) {
@@ -255,13 +332,22 @@ function ActivitiesTab({ job, reload }: { job: JobDetail; reload: () => void }) 
   return (
     <div className="space-y-3">
       <div className="flex gap-2">
-        <select value={type} onChange={(e) => setType(e.target.value)} className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm">
+        <select
+          value={type}
+          onChange={(e) => setType(e.target.value)}
+          className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+        >
           <option value="note">Note</option>
           <option value="follow_up">Follow-up</option>
           <option value="interview">Interview</option>
           <option value="applied">Applied</option>
         </select>
-        <Input placeholder="Add an activity…" value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
+        <Input
+          placeholder="Add an activity…"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && add()}
+        />
         <Input type="date" value={due} onChange={(e) => setDue(e.target.value)} className="!w-36" />
         <Button onClick={add}>Add</Button>
       </div>
@@ -269,23 +355,47 @@ function ActivitiesTab({ job, reload }: { job: JobDetail; reload: () => void }) 
         {job.activities.map((a) => {
           const overdue = a.due_at && !a.done && a.due_at < Date.now();
           return (
-            <li key={a.id} className={`group flex items-start gap-2.5 rounded-lg border px-3 py-2 ${overdue ? 'border-rose-200 bg-rose-50/50' : 'border-slate-100'}`}>
+            <li
+              key={a.id}
+              className={`group flex items-start gap-2.5 rounded-lg border px-3 py-2 ${overdue ? 'border-rose-200 bg-rose-50/50' : 'border-slate-100'}`}
+            >
               <span className="mt-0.5">{ACT_ICONS[a.type] ?? '•'}</span>
               <div className="min-w-0 flex-1">
-                <div className={`text-sm ${a.done ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{a.title}</div>
+                <div className={`text-sm ${a.done ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
+                  {a.title}
+                </div>
                 <div className="text-xs text-slate-400">
                   {new Date(a.created_at).toLocaleDateString()}
-                  {a.due_at && <span className={overdue ? 'ml-1 font-medium text-rose-500' : 'ml-1'}>· due {new Date(a.due_at).toLocaleDateString()}</span>}
+                  {a.due_at && (
+                    <span className={overdue ? 'ml-1 font-medium text-rose-500' : 'ml-1'}>
+                      · due {new Date(a.due_at).toLocaleDateString()}
+                    </span>
+                  )}
                 </div>
               </div>
               {a.type !== 'stage_change' && (
-                <input type="checkbox" checked={!!a.done} onChange={(e) => toggle(a.id, e.target.checked)} className="mt-1 accent-brand-600" title="Done" />
+                <input
+                  type="checkbox"
+                  checked={!!a.done}
+                  onChange={(e) => toggle(a.id, e.target.checked)}
+                  className="mt-1 accent-brand-600"
+                  title="Done"
+                />
               )}
-              <button onClick={() => remove(a.id)} className="invisible text-slate-300 hover:text-rose-500 group-hover:visible">✕</button>
+              <button
+                onClick={() => remove(a.id)}
+                className="invisible text-slate-300 hover:text-rose-500 group-hover:visible"
+              >
+                ✕
+              </button>
             </li>
           );
         })}
-        {job.activities.length === 0 && <p className="py-4 text-center text-sm text-slate-400">No activity yet — moves between stages are logged automatically.</p>}
+        {job.activities.length === 0 && (
+          <p className="py-4 text-center text-sm text-slate-400">
+            No activity yet — moves between stages are logged automatically.
+          </p>
+        )}
       </ul>
     </div>
   );
@@ -294,7 +404,8 @@ function ActivitiesTab({ job, reload }: { job: JobDetail; reload: () => void }) 
 function ContactsTab({ job, reload }: { job: JobDetail; reload: () => void }) {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ name: '', role: '', email: '', linkedin: '', notes: '' });
-  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
 
   async function add() {
     if (!form.name.trim()) return;
@@ -309,22 +420,47 @@ function ContactsTab({ job, reload }: { job: JobDetail; reload: () => void }) {
       {job.contacts.map((c) => (
         <div key={c.id} className="group rounded-xl border border-slate-200 p-3">
           <div className="flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-sm font-bold text-brand-700">{c.name.slice(0, 1).toUpperCase()}</span>
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-sm font-bold text-brand-700">
+              {c.name.slice(0, 1).toUpperCase()}
+            </span>
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium text-slate-700">{c.name}</div>
               <div className="text-xs text-slate-400">{c.role}</div>
             </div>
-            <button onClick={async () => { await api.del(`/api/contacts/${c.id}`); reload(); }} className="invisible text-slate-300 hover:text-rose-500 group-hover:visible">✕</button>
+            <button
+              onClick={async () => {
+                await api.del(`/api/contacts/${c.id}`);
+                reload();
+              }}
+              className="invisible text-slate-300 hover:text-rose-500 group-hover:visible"
+            >
+              ✕
+            </button>
           </div>
           <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
-            {c.email && <a className="text-brand-600 hover:underline" href={`mailto:${c.email}`}>{c.email}</a>}
-            {c.linkedin && <a className="text-brand-600 hover:underline" href={c.linkedin} target="_blank" rel="noreferrer">LinkedIn ↗</a>}
+            {c.email && (
+              <a className="text-brand-600 hover:underline" href={`mailto:${c.email}`}>
+                {c.email}
+              </a>
+            )}
+            {c.linkedin && (
+              <a
+                className="text-brand-600 hover:underline"
+                href={c.linkedin}
+                target="_blank"
+                rel="noreferrer"
+              >
+                LinkedIn ↗
+              </a>
+            )}
           </div>
           {c.notes && <p className="mt-1 text-xs text-slate-500">{c.notes}</p>}
         </div>
       ))}
       {!adding ? (
-        <Button variant="ghost" onClick={() => setAdding(true)} className="w-full">＋ Add contact</Button>
+        <Button variant="ghost" onClick={() => setAdding(true)} className="w-full">
+          ＋ Add contact
+        </Button>
       ) : (
         <div className="space-y-2 rounded-xl border border-slate-200 p-3">
           <div className="grid grid-cols-2 gap-2">
@@ -335,7 +471,9 @@ function ContactsTab({ job, reload }: { job: JobDetail; reload: () => void }) {
           </div>
           <TextArea rows={2} placeholder="Notes" value={form.notes} onChange={set('notes')} />
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
+            <Button variant="ghost" onClick={() => setAdding(false)}>
+              Cancel
+            </Button>
             <Button onClick={add}>Add contact</Button>
           </div>
         </div>
