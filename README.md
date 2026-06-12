@@ -5,8 +5,6 @@ A free, self-hosted alternative to Huntr Pro — kanban job tracker + AI resume 
 **never re-templates your resume**. Your DOCX stays your DOCX; the AI only rewrites the text
 of the exact lines you approve.
 
-> Full product spec lives in [PRD.md](PRD.md).
-
 ## Why
 
 - AI resume tools flatten your carefully formatted resume into *their* template. Tailr mutates
@@ -131,11 +129,7 @@ Then in the browser at **http://localhost:7777**:
 
 ## For AI agents
 
-Working on this repo programmatically? Read these in order, then this sequence is deterministic:
-
-1. **[PRD.md](PRD.md)** — the product spec and source of truth for behavior.
-2. **[AGENT_HANDOFF.md](AGENT_HANDOFF.md)** — current build state, what's verified vs. open,
-   and environment gotchas. **Update it before ending an unfinished session.**
+Working on this repo programmatically? This sequence is deterministic:
 
 ```bash
 npm install                          # install everything (npm workspaces: server + client)
@@ -158,10 +152,10 @@ npm run test:fidelity -w server      # pixel-fidelity harness (needs LibreOffice
 client/   React 18 + Vite + TypeScript + Tailwind 4 (+ @dnd-kit, pdf.js)
 server/   Node + Fastify + better-sqlite3
   src/docx/      format-preserving engine: JSZip + @xmldom/xmldom,
-                 parse → model.json, 4 surgical edit ops (see PRD §6)
+                 parse → model.json, 4 surgical edit ops
   src/services/  ai/ (codex exec adapter + prompts + AJV schemas),
                  scoring (deterministic), tailoring (pipeline), convert (soffice)
-  src/routes/    REST API per PRD §10 + SSE event bus
+  src/routes/    REST API + SSE event bus
 demos/    original Python prototypes the DOCX engine was ported from
 ```
 
@@ -174,5 +168,6 @@ npm test   # DOCX round-trip + edit-op test suite
 
 ## Status
 
-v1 core loop is implemented end-to-end. See [AGENT_HANDOFF.md](AGENT_HANDOFF.md) for the
-detailed state of each PRD milestone and what's intentionally left for follow-ups.
+v1 core loop is implemented end-to-end: upload a DOCX, analyze a JD, score the match, run
+AI Tailor, accept/reject suggestions on a pixel-accurate preview, and export PDF/DOCX — all
+local, all format-preserving.

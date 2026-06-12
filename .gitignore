@@ -9,3 +9,5 @@ logs/
 /*.docx
 app.db-wal
 app.db-shm
+PRD.md
+AGENT_HANDOFF.md
