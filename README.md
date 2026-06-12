@@ -39,7 +39,7 @@ Everything baked in: Node, LibreOffice, poppler, resume-friendly fonts, and the 
 
 ```bash
 docker run -d --name tailr \
-  -p 7777:7777 -p 1455:1455 \
+  -p 7777:7777 \
   -v tailr-data:/data \
   --restart unless-stopped \
   ghcr.io/shanilkoshitha/tailr:latest
@@ -48,9 +48,9 @@ docker run -d --name tailr \
 Or clone the repo and `docker compose up -d`. Open **http://localhost:7777**, then connect
 the AI (one of):
 
-- **ChatGPT plan:** `docker exec -it tailr codex login` — open the printed URL in your
-  browser (the `1455` port mapping carries the OAuth callback; if your codex version binds
-  the callback to loopback only, use the device-code login or the API key instead).
+- **ChatGPT plan:** Settings → **Connect ChatGPT** — open the link it shows, sign in, and
+  enter the one-time code (device-code login; no extra ports needed). Same thing from a
+  terminal: `docker exec -it tailr codex login --device-auth`.
 - **API key:** add `-e OPENAI_API_KEY=sk-...` to the run command (or uncomment it in
   `docker-compose.yml`).
 
@@ -66,7 +66,7 @@ docker compose pull && docker compose up -d
 # or, without compose:
 docker pull ghcr.io/shanilkoshitha/tailr:latest
 docker stop tailr && docker rm tailr && docker run -d --name tailr \
-  -p 7777:7777 -p 1455:1455 -v tailr-data:/data --restart unless-stopped \
+  -p 7777:7777 -v tailr-data:/data --restart unless-stopped \
   ghcr.io/shanilkoshitha/tailr:latest
 ```
 
@@ -134,7 +134,7 @@ npm install
 
 # 2. (Recommended) install the AI engine and sign in to your ChatGPT account
 npm install -g @openai/codex
-codex login            # opens a browser OAuth flow; you can also do this from Settings
+codex login            # browser OAuth flow; or use Settings → Connect ChatGPT (device code)
 
 # 3. Verify the toolchain is visible (all optional, but confirms your setup)
 node --version         # must print v20 or higher

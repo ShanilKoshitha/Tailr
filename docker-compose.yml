@@ -5,8 +5,6 @@ services:
     container_name: tailr
     ports:
       - '7777:7777'
-      # codex OAuth callback — only needed while running `codex login`
-      - '1455:1455'
     volumes:
       # everything mutable lives here: app.db, storage/, logs/, codex auth
       - tailr-data:/data

@@ -7,6 +7,20 @@
       "runtimeArgs": ["tsx", "server/src/index.ts"],
       "port": 7777,
       "autoPort": false
+    },
+    {
+      "name": "tailr-logged-out",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "CODEX_HOME=/tmp/tailr-codex-test",
+        "TAILR_DATA_DIR=/tmp/tailr-test-data",
+        "PORT=7778",
+        "npx",
+        "tsx",
+        "server/src/index.ts"
+      ],
+      "port": 7778,
+      "autoPort": false
     }
   ]
 }
