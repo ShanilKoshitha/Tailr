@@ -19,7 +19,7 @@ interface Settings {
 export default function SettingsView() {
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [authUrl, setAuthUrl] = useState<string | null>(null);
+  const [auth, setAuth] = useState<{ url: string; code: string | null } | null>(null);
   const [polling, setPolling] = useState(false);
   const pollStop = useRef<(() => void) | null>(null);
 
@@ -45,11 +45,12 @@ export default function SettingsView() {
   /**
    * Sequential auth polling: each check waits for the previous one to finish
    * (the endpoint spawns a codex process — overlapping setInterval calls used
-   * to pile those up), and the loop gives up after 5 minutes.
+   * to pile those up), and the loop gives up after 15 minutes (the device
+   * code's lifetime).
    */
   function pollUntilAuthenticated() {
     const POLL_MS = 3000;
-    const GIVE_UP_MS = 5 * 60 * 1000;
+    const GIVE_UP_MS = 15 * 60 * 1000;
     const startedAt = Date.now();
     let stopped = false;
     pollStop.current = () => {
@@ -62,7 +63,7 @@ export default function SettingsView() {
         if (stopped) return;
         if (s.authenticated) {
           setPolling(false);
-          setAuthUrl(null);
+          setAuth(null);
           toast('ChatGPT connected ✓', 'success');
           load();
           return;
@@ -83,17 +84,20 @@ export default function SettingsView() {
   async function connect() {
     setPolling(true);
     try {
-      const r = await api.post<{ authUrl: string | null; error?: string }>('/api/ai/login');
+      const r = await api.post<{ authUrl: string | null; deviceCode: string | null; error?: string }>(
+        '/api/ai/login',
+      );
       if (!r.authUrl) {
         // no URL → nothing to wait for; do NOT start polling
         setPolling(false);
         toast(
-          r.error ?? 'codex produced no login URL — run `codex login` in a terminal, then Re-check',
+          r.error ??
+            'codex produced no login URL — run `codex login --device-auth` in a terminal, then Re-check',
           'error',
         );
         return;
       }
-      setAuthUrl(r.authUrl);
+      setAuth({ url: r.authUrl, code: r.deviceCode });
       pollUntilAuthenticated();
     } catch (e) {
       toast((e as Error).message, 'error');
@@ -165,19 +169,31 @@ export default function SettingsView() {
             </Button>
           )}
         </div>
-        {authUrl && (
+        {auth && (
           <div className="mt-3 rounded-xl bg-brand-50 p-3 text-sm">
-            Open this link to sign in:{' '}
-            <a
-              className="break-all font-medium text-brand-700 underline"
-              href={authUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {authUrl}
-            </a>
+            <div>
+              1. Open this link and sign in to your account:{' '}
+              <a
+                className="break-all font-medium text-brand-700 underline"
+                href={auth.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {auth.url}
+              </a>
+            </div>
+            {auth.code && (
+              <div className="mt-2">
+                2. Enter this one-time code:{' '}
+                <code className="rounded bg-white px-2 py-0.5 font-bold tracking-wider text-brand-700">
+                  {auth.code}
+                </code>{' '}
+                <span className="text-xs text-slate-500">(expires in 15 minutes)</span>
+              </div>
+            )}
             <div className="mt-1 text-xs text-slate-500">
-              Tailr polls every 2s and updates automatically when you finish.
+              Tailr polls automatically and updates when you finish. Never share the code — device codes
+              are a common phishing target.
             </div>
           </div>
         )}

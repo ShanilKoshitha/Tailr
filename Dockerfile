@@ -36,8 +36,9 @@ RUN apt-get update \
         fonts-crosextra-caladea \
     && rm -rf /var/lib/apt/lists/*
 
-# Codex CLI preinstalled — sign in via Settings → Connect ChatGPT,
-# `docker exec -it tailr codex login`, or set OPENAI_API_KEY
+# Codex CLI preinstalled — sign in via Settings → Connect ChatGPT (device-auth:
+# URL + one-time code, no callback port needed), via
+# `docker exec -it tailr codex login --device-auth`, or set OPENAI_API_KEY
 RUN npm install -g @openai/codex && npm cache clean --force
 
 WORKDIR /app
@@ -60,8 +61,7 @@ RUN mkdir -p /data/.codex && chown -R node:node /data
 USER node
 VOLUME /data
 
-# 7777 app · 1455 codex OAuth callback (only needed during ChatGPT sign-in)
-EXPOSE 7777 1455
+EXPOSE 7777
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD node -e "fetch('http://127.0.0.1:7777/api/boards').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
