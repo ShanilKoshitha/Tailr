@@ -36,7 +36,7 @@ export default async function aiRoutes(app: FastifyInstance) {
 
   app.patch<{ Body: SettingsBody }>('/api/settings', { schema: { body: settingsBody } }, (req) => {
     // the body schema strips unknown keys (AJV removeAdditional), so every
-      // entry here is a known setting
+    // entry here is a known setting
     for (const [key, value] of Object.entries(req.body ?? {})) {
       if (typeof value === 'string') setSetting(key, value);
     }
