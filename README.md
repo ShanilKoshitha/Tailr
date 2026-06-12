@@ -58,6 +58,18 @@ All your data (database, resumes, tailored versions, codex credentials) lives in
 `tailr-data` volume — back that up and you've backed up everything. Heads-up: the image is
 ~1 GB because LibreOffice is inside; that's the point.
 
+**Updating:** Docker never re-pulls a tag you already have — `latest` on your machine stays
+frozen until you ask. To update (your data survives; it's in the volume):
+
+```bash
+docker compose pull && docker compose up -d
+# or, without compose:
+docker pull ghcr.io/shanilkoshitha/tailr:latest
+docker stop tailr && docker rm tailr && docker run -d --name tailr \
+  -p 7777:7777 -p 1455:1455 -v tailr-data:/data --restart unless-stopped \
+  ghcr.io/shanilkoshitha/tailr:latest
+```
+
 ## Quick start (from source)
 
 ```bash

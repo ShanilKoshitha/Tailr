@@ -54,7 +54,9 @@ ENV NODE_ENV=production \
     PORT=7777 \
     TAILR_DATA_DIR=/data \
     CODEX_HOME=/data/.codex
-RUN mkdir -p /data && chown -R node:node /data
+# pre-create CODEX_HOME — codex refuses to start when it's missing; the
+# server also re-creates it at boot for volumes initialized by older images
+RUN mkdir -p /data/.codex && chown -R node:node /data
 USER node
 VOLUME /data
 
