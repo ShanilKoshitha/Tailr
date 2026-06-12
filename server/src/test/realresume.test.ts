@@ -12,10 +12,16 @@ import { parseDocx } from '../docx/parse.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const docxPath = process.argv[2] ?? path.join(ROOT, 'shanil-hewage.docx');
+// demos/ holds personal data and is gitignored — present locally, absent on
+// public clones. This test is a local-only regression check; skip without it.
 const refPath = path.join(ROOT, 'demos', 'model.json');
 
 if (!fs.existsSync(docxPath)) {
   console.log(`(skipped — no resume at ${docxPath})`);
+  process.exit(0);
+}
+if (!fs.existsSync(refPath)) {
+  console.log(`(skipped — no reference model at ${refPath})`);
   process.exit(0);
 }
 
