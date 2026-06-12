@@ -41,6 +41,9 @@ export async function aiClassifyModel(model: ResumeModel): Promise<{ model: Resu
     }
   }
   out.entries = [...entryMap.values()].filter((e) => e.bulletIds.length || e.headerId);
+  // a combined "Company — dates" line often classifies as entryCompany; make
+  // sure every entry still has a display title
+  for (const e of out.entries) if (!e.title) e.title = e.company;
   // sanity: the AI pass must actually improve things, otherwise keep heuristics
   if (heuristicsFailed(out)) return { model, usedAi: false };
   return { model: out, usedAi: true };

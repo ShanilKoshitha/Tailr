@@ -10,5 +10,15 @@ export default defineConfig({
       '/api': { target: 'http://localhost:7777', changeOrigin: true },
     },
   },
-  build: { outDir: 'dist' },
+  build: {
+    outDir: 'dist',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          pdfjs: ['pdfjs-dist'],
+          vendor: ['react', 'react-dom', 'react-router-dom', '@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],
+        },
+      },
+    },
+  },
 });

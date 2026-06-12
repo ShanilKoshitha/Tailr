@@ -4,15 +4,13 @@
  * with validator errors appended; queue of max 2 parallel processes; every
  * call logged to logs/ai/.
  */
-import { spawn, execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Ajv, type ValidateFunction } from 'ajv';
 import { AI_LOGS_DIR, AITMP_DIR } from '../../paths.js';
 import { getSetting } from '../../db.js';
+import { execCli, spawnCli } from '../exec.js';
 
-const pExecFile = promisify(execFile);
 const ajv = new Ajv({ allErrors: true, strict: false });
 
 const MAX_PARALLEL = 2;
@@ -50,7 +48,7 @@ export async function aiStatus(): Promise<AiStatus> {
   const usingApiKey = !!getSetting('openai_api_key');
   let version: string | null = null;
   try {
-    const r = await pExecFile('codex', ['--version'], { timeout: 15000 });
+    const r = await execCli('codex', ['--version'], { timeout: 15000 });
     version = r.stdout.trim();
   } catch {
     return { installed: false, version: null, authenticated: false, model, reasoningEffort, usingApiKey };
@@ -58,7 +56,7 @@ export async function aiStatus(): Promise<AiStatus> {
   let authenticated = usingApiKey;
   if (!authenticated) {
     try {
-      await pExecFile('codex', ['login', 'status'], { timeout: 15000 });
+      await execCli('codex', ['login', 'status'], { timeout: 15000 });
       authenticated = true;
     } catch {
       authenticated = false;
@@ -68,11 +66,11 @@ export async function aiStatus(): Promise<AiStatus> {
 }
 
 /** Spawn `codex login`, capture the auth URL from stdout. Process keeps running until auth completes. */
-let loginProc: ReturnType<typeof spawn> | null = null;
+let loginProc: ReturnType<typeof spawnCli> | null = null;
 export function startLogin(): Promise<{ authUrl: string | null }> {
   return new Promise((resolve) => {
     if (loginProc) { loginProc.kill(); loginProc = null; }
-    const proc = spawn('codex', ['login'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const proc = spawnCli('codex', ['login'], { stdio: ['ignore', 'pipe', 'pipe'] });
     loginProc = proc;
     let buf = '';
     let resolved = false;
@@ -119,25 +117,30 @@ function runCodex(prompt: string): Promise<string> {
   const model = getSetting('ai_model', '');
   const effort = getSetting('ai_reasoning', '');
   const apiKey = getSetting('openai_api_key');
+  // The prompt travels over STDIN (`codex exec -`), never on the command
+  // line — required for the Windows shell path (see exec.ts) and immune to
+  // ARG_MAX limits on long resumes/JDs.
   const args = [
     'exec', '--json', '--skip-git-repo-check',
     '--sandbox', 'read-only',
     '-C', AITMP_DIR,
     ...(model ? ['-m', model] : []),
     ...(effort ? ['-c', `model_reasoning_effort="${effort}"`] : []),
-    prompt,
+    '-',
   ];
   return new Promise((resolve, reject) => {
     const env = { ...process.env, ...(apiKey ? { OPENAI_API_KEY: apiKey } : {}) };
-    const proc = spawn('codex', args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const proc = spawnCli('codex', args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
     const timer = setTimeout(() => {
       proc.kill('SIGKILL');
       reject(new Error(`codex exec timed out after ${CALL_TIMEOUT_MS / 1000}s`));
     }, CALL_TIMEOUT_MS);
-    proc.stdout.on('data', (d) => (out += d));
-    proc.stderr.on('data', (d) => (err += d));
+    proc.stdin!.on('error', () => { /* EPIPE if codex exits first — surfaced via exit code */ });
+    proc.stdin!.end(prompt, 'utf8');
+    proc.stdout!.on('data', (d) => (out += d));
+    proc.stderr!.on('data', (d) => (err += d));
     proc.on('error', (e) => { clearTimeout(timer); reject(e); });
     proc.on('exit', (code) => {
       clearTimeout(timer);

@@ -37,15 +37,17 @@ of the exact lines you approve.
 
 ## Setup
 
-Requirements: **Node 20+**. Optional but recommended:
+Requirements: **Node 20+** (macOS, Windows, or Linux). Optional but recommended:
 
-| Tool | Used for | Install (macOS) |
-|---|---|---|
-| [Codex CLI](https://github.com/openai/codex) | All AI features | `npm i -g @openai/codex` then sign in via Settings |
-| LibreOffice | PDF preview + PDF export | `brew install --cask libreoffice` |
-| poppler (`pdftotext`) | Hover highlights on the preview | `brew install poppler` |
+| Tool | Used for | macOS | Windows |
+|---|---|---|---|
+| [Codex CLI](https://github.com/openai/codex) | All AI features | `npm i -g @openai/codex` | `npm i -g @openai/codex` |
+| LibreOffice | PDF preview + PDF export | `brew install --cask libreoffice` | `winget install TheDocumentFoundation.LibreOffice` |
+| poppler (`pdftotext`) | Hover highlights on the preview | `brew install poppler` | `choco install poppler` or `scoop install poppler` |
 
 The app runs without them — Settings shows live status and install hints for each.
+On Windows, LibreOffice is auto-detected at `C:\Program Files\LibreOffice`; for poppler make
+sure `pdftotext` ends up on your `PATH` (choco/scoop do this for you).
 
 ```bash
 git clone <this repo> && cd Tailr

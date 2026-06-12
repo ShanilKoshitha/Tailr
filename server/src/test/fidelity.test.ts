@@ -11,7 +11,7 @@ import { promisify } from 'node:util';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
 import pixelmatch from 'pixelmatch';
 import { parseDocx } from '../docx/parse.js';
@@ -35,7 +35,7 @@ if (!soffice || !havePoppler) {
 async function toPdf(docx: string, outDir: string): Promise<string> {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'tailr-fid-lo-'));
   try {
-    await pExecFile(soffice!, ['--headless', `-env:UserInstallation=file://${profile}`, '--convert-to', 'pdf', '--outdir', outDir, docx], { timeout: 120000 });
+    await pExecFile(soffice!, ['--headless', `-env:UserInstallation=${pathToFileURL(profile).href}`, '--convert-to', 'pdf', '--outdir', outDir, docx], { timeout: 120000 });
   } finally {
     fs.rmSync(profile, { recursive: true, force: true });
   }

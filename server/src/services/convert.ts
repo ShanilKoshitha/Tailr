@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { pathToFileURL } from 'node:url';
 import { getSetting } from '../db.js';
 import type { ResumeModel } from '../docx/types.js';
 
@@ -53,11 +54,12 @@ export async function convertToPdf(docxPath: string, outDir?: string): Promise<s
   const soffice = await findSoffice();
   if (!soffice) return null;
   const dir = outDir ?? path.dirname(docxPath);
-  // unique profile dir avoids soffice lock contention on concurrent calls
+  // unique profile dir avoids soffice lock contention on concurrent calls;
+  // pathToFileURL handles Windows drive letters (file:///C:/...)
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'tailr-lo-'));
   try {
     await pExecFile(soffice, [
-      '--headless', `-env:UserInstallation=file://${profile}`,
+      '--headless', `-env:UserInstallation=${pathToFileURL(profile).href}`,
       '--convert-to', 'pdf', '--outdir', dir, docxPath,
     ], { timeout: 120000 });
     const pdf = path.join(dir, path.basename(docxPath).replace(/\.docx$/i, '.pdf'));
@@ -112,7 +114,15 @@ export async function buildBboxMap(pdfPath: string, model: ResumeModel): Promise
   }
   if (!words.length) return null;
 
-  const stream = words.map((w) => norm(w.text));
+  // Filter symbol-only words ("•", "·", "–", "&") from BOTH sides — the
+  // target filters them, so the stream must too or positions drift and long
+  // symbol-separated paragraphs (summary, skills, entry headers) never match.
+  const filtered: Array<{ n: string; wordIdx: number }> = [];
+  words.forEach((w, i) => {
+    const n = norm(w.text);
+    if (n) filtered.push({ n, wordIdx: i });
+  });
+  const stream = filtered.map((f) => f.n);
   const boxes: ParaBox[] = [];
   let cursor = 0;
   for (const p of model.paragraphs) {
@@ -121,7 +131,7 @@ export async function buildBboxMap(pdfPath: string, model: ResumeModel): Promise
     if (!target.length) continue;
     const start = findSeq(stream, target, cursor);
     if (start < 0) continue;
-    const seg = words.slice(start, start + target.length);
+    const seg = filtered.slice(start, start + target.length).map((f) => words[f.wordIdx]);
     const pg = seg[0].page;
     const onPage = seg.filter((w) => w.page === pg);
     const x = Math.min(...onPage.map((w) => w.xMin));
