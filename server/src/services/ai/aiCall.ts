@@ -97,12 +97,26 @@ export interface LoginStart {
   error?: string;
 }
 
-/** Pick the auth URL from codex output, preferring the real provider URL over
- *  the local callback server it also prints. Codex embeds URLs in prose, so
+/** Pick the auth URL from codex output. Two traps here: codex prints its
+ *  local callback server ("Starting local login server on
+ *  http://localhost:1455.") BEFORE the real provider URL, so a localhost
+ *  match must not end the wait — with `final` unset, hold out for the
+ *  provider URL and reserve the localhost fallback for the deadline. And
+ *  "local" must be judged by HOSTNAME: the provider URL carries
+ *  redirect_uri=http%3A%2F%2Flocalhost%3A1455 in its query, so a substring
+ *  test rejects the very URL we want. Codex embeds URLs in prose, so
  *  trailing sentence punctuation must be stripped or the link 404s. */
-function pickAuthUrl(output: string): string | null {
+function pickAuthUrl(output: string, opts?: { final?: boolean }): string | null {
   const urls = (output.match(/https?:\/\/\S+/g) ?? []).map((u) => u.replace(/[.,;:)\]'"]+$/, ''));
-  return urls.find((u) => !/localhost|127\.0\.0\.1/.test(u)) ?? urls[0] ?? null;
+  const isLocal = (u: string) => {
+    try {
+      return ['localhost', '127.0.0.1'].includes(new URL(u).hostname);
+    } catch {
+      return true;
+    }
+  };
+  const provider = urls.find((u) => !isLocal(u)) ?? null;
+  return provider ?? (opts?.final ? (urls[0] ?? null) : null);
 }
 
 /** Spawn `codex login`, capture the auth URL. Process keeps running until auth completes. */
@@ -143,7 +157,7 @@ export function startLogin(): Promise<LoginStart> {
       fail(`codex login exited (code ${code}) before printing an auth URL`);
     });
     setTimeout(() => {
-      const url = pickAuthUrl(buf);
+      const url = pickAuthUrl(buf, { final: true });
       if (url) finish({ authUrl: url });
       else fail('codex login produced no auth URL within 20s');
     }, 20000);

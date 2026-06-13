@@ -22,6 +22,9 @@ RUN npm run build -w client \
 # ---------------------------------------------------------------------------
 FROM node:22-bookworm-slim
 
+# ca-certificates:    system TLS roots — the codex Rust binary reads these
+#                     (Node has its own bundle; without this package every
+#                     codex HTTPS call fails with "error sending request")
 # libreoffice-writer: DOCX→PDF previews/export (full suite not needed)
 # poppler-utils:      pdftotext/pdftoppm → preview hover overlays
 # carlito/caladea:    metric-compatible with Calibri/Cambria (common resume
@@ -29,6 +32,7 @@ FROM node:22-bookworm-slim
 #                     faithful; liberation covers Arial/Times/Courier
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+        ca-certificates \
         libreoffice-writer \
         poppler-utils \
         fonts-liberation \

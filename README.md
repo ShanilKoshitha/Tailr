@@ -48,9 +48,10 @@ docker run -d --name tailr \
 Or clone the repo and `docker compose up -d`. Open **http://localhost:7777**, then connect
 the AI (one of):
 
-- **ChatGPT plan:** `docker exec -it tailr codex login` — open the printed URL in your
-  browser (the `1455` port mapping carries the OAuth callback; if your codex version binds
-  the callback to loopback only, use the device-code login or the API key instead).
+- **ChatGPT plan:** Settings → **Connect ChatGPT**, or `docker exec -it tailr codex login` —
+  open the printed URL in your browser. The `1455` port mapping carries the OAuth callback;
+  the server relays it to codex inside the container (codex binds loopback only, which
+  published ports can't reach on their own).
 - **API key:** add `-e OPENAI_API_KEY=sk-...` to the run command (or uncomment it in
   `docker-compose.yml`).
 

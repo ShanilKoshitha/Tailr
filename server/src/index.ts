@@ -5,6 +5,7 @@ import fastifyStatic from '@fastify/static';
 import fs from 'node:fs';
 import { ensureDirs, CLIENT_DIST } from './paths.js';
 import { seedIfEmpty } from './db.js';
+import { startCodexOauthRelay } from './services/oauthRelay.js';
 import { subscribe } from './sse.js';
 import boardsRoutes from './routes/boards.js';
 import jobsRoutes from './routes/jobs.js';
@@ -20,6 +21,7 @@ const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 ensureDirs();
 seedIfEmpty();
+startCodexOauthRelay();
 
 const app = Fastify({ logger: { level: 'warn' } });
 
