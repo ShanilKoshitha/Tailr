@@ -93,33 +93,34 @@ export async function isAuthenticated(): Promise<boolean> {
 
 export interface LoginStart {
   authUrl: string | null;
+  /** One-time code the user enters at authUrl (expires after ~15 minutes). */
+  deviceCode: string | null;
   /** Diagnostic when no URL could be captured (exit code / output tail). */
   error?: string;
 }
 
-/** Pick the auth URL from codex output. Two traps here: codex prints its
- *  local callback server ("Starting local login server on
- *  http://localhost:1455.") BEFORE the real provider URL, so a localhost
- *  match must not end the wait — with `final` unset, hold out for the
- *  provider URL and reserve the localhost fallback for the deadline. And
- *  "local" must be judged by HOSTNAME: the provider URL carries
- *  redirect_uri=http%3A%2F%2Flocalhost%3A1455 in its query, so a substring
- *  test rejects the very URL we want. Codex embeds URLs in prose, so
- *  trailing sentence punctuation must be stripped or the link 404s. */
-function pickAuthUrl(output: string, opts?: { final?: boolean }): string | null {
-  const urls = (output.match(/https?:\/\/\S+/g) ?? []).map((u) => u.replace(/[.,;:)\]'"]+$/, ''));
-  const isLocal = (u: string) => {
-    try {
-      return ['localhost', '127.0.0.1'].includes(new URL(u).hostname);
-    } catch {
-      return true;
-    }
-  };
-  const provider = urls.find((u) => !isLocal(u)) ?? null;
-  return provider ?? (opts?.final ? (urls[0] ?? null) : null);
+// eslint-disable-next-line no-control-regex -- ESC is the point: stripping ANSI color codes
+const stripAnsi = (s: string) => s.replace(/\u001b\[[0-9;]*[A-Za-z]/g, '');
+
+/** Parse `codex login --device-auth` output: a verification URL plus a
+ *  one-time code printed on its own line (e.g. "JJVV-HU53B"). Codex embeds
+ *  URLs in prose, so trailing sentence punctuation must be stripped or the
+ *  link 404s. The browser-OAuth flow is unusable here: its callback server
+ *  binds 127.0.0.1:1455, which a Docker port mapping can never reach. */
+function pickDeviceAuth(output: string): { authUrl: string | null; deviceCode: string | null } {
+  const clean = stripAnsi(output);
+  const urls = (clean.match(/https?:\/\/\S+/g) ?? []).map((u) => u.replace(/[.,;:)\]'"]+$/, ''));
+  const authUrl = urls.find((u) => !/localhost|127\.0\.0\.1/.test(u)) ?? null;
+  const deviceCode =
+    clean
+      .split('\n')
+      .map((l) => l.trim())
+      .find((l) => /^[A-Z0-9]{3,10}-[A-Z0-9]{3,10}$/.test(l)) ?? null;
+  return { authUrl, deviceCode };
 }
 
-/** Spawn `codex login`, capture the auth URL. Process keeps running until auth completes. */
+/** Spawn `codex login --device-auth`, capture the verification URL + one-time
+ *  code. Process keeps running until auth completes. */
 let loginProc: ReturnType<typeof spawnCli> | null = null;
 export function startLogin(): Promise<LoginStart> {
   return new Promise((resolve) => {
@@ -127,7 +128,9 @@ export function startLogin(): Promise<LoginStart> {
       loginProc.kill();
       loginProc = null;
     }
-    const proc = spawnCli('codex', ['login'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const proc = spawnCli('codex', ['login', '--device-auth'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     loginProc = proc;
     let buf = '';
     let resolved = false;
@@ -139,12 +142,13 @@ export function startLogin(): Promise<LoginStart> {
     const fail = (reason: string) =>
       finish({
         authUrl: null,
-        error: `${reason}${buf.trim() ? ` — codex said: ${buf.trim().slice(-300)}` : ''}`,
+        deviceCode: null,
+        error: `${reason}${buf.trim() ? ` — codex said: ${stripAnsi(buf).trim().slice(-300)}` : ''}`,
       });
     const onData = (d: Buffer) => {
       buf += d.toString();
-      const url = pickAuthUrl(buf);
-      if (url) finish({ authUrl: url });
+      const { authUrl, deviceCode } = pickDeviceAuth(buf);
+      if (authUrl && deviceCode) finish({ authUrl, deviceCode });
     };
     proc.stdout?.on('data', onData);
     proc.stderr?.on('data', onData);
@@ -157,8 +161,8 @@ export function startLogin(): Promise<LoginStart> {
       fail(`codex login exited (code ${code}) before printing an auth URL`);
     });
     setTimeout(() => {
-      const url = pickAuthUrl(buf, { final: true });
-      if (url) finish({ authUrl: url });
+      const { authUrl, deviceCode } = pickDeviceAuth(buf);
+      if (authUrl) finish({ authUrl, deviceCode });
       else fail('codex login produced no auth URL within 20s');
     }, 20000);
   });

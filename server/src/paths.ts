@@ -17,7 +17,12 @@ export const RESTORE_DIR = path.join(DATA_DIR, 'restore-pending');
 export const CLIENT_DIST = path.join(ROOT, 'client', 'dist');
 
 export function ensureDirs() {
-  for (const d of [STORAGE, RESUMES_DIR, TAILORED_DIR, AITMP_DIR, AI_LOGS_DIR]) {
+  const dirs = [STORAGE, RESUMES_DIR, TAILORED_DIR, AITMP_DIR, AI_LOGS_DIR];
+  // codex errors out ("Error loading configuration") when CODEX_HOME points
+  // at a missing directory — the Docker image stores it on the /data volume,
+  // so create it at boot (also heals volumes created by older images)
+  if (process.env.CODEX_HOME) dirs.push(process.env.CODEX_HOME);
+  for (const d of dirs) {
     fs.mkdirSync(d, { recursive: true });
   }
 }

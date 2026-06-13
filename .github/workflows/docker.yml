@@ -48,6 +48,16 @@ jobs:
           echo "$STATUS" | grep -q '"soffice":true'
           echo "$STATUS" | grep -q '"pdftotext":true'
 
+          echo "— codex can load its config (CODEX_HOME exists & writable)…"
+          CODEX_OUT=$(docker exec tailr-test sh -c 'codex login status 2>&1 || true')
+          echo "$CODEX_OUT"
+          # "not logged in" is the expected healthy answer; a config/CODEX_HOME
+          # error means the image is broken for EVERY ai call
+          if echo "$CODEX_OUT" | grep -qiE 'error loading configuration|CODEX_HOME'; then
+            echo "::error::codex cannot load its configuration inside the container"
+            exit 1
+          fi
+
           echo "— end to end: upload a resume, expect a PDF preview…"
           ID=$(curl -fs -F "file=@server/test-fixtures/table-resume.docx" \
                  localhost:7777/api/resumes | tee /dev/stderr | jq -r .resume.id)
